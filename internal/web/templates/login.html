@@ -1,0 +1,17 @@
+{{define "title"}}Sign in · Runner Manager{{end}}
+{{define "content"}}
+<div class="login-wrap">
+  <div class="login">
+    <div class="brand"><span class="brand-mark"></span>Runner Manager</div>
+    <div class="card pad">
+      <form method="post" action="/login">
+        {{if .Data.Error}}<div class="err" role="alert">{{.Data.Error}}</div>{{end}}
+        <div class="field"><label for="username">Username</label><input type="text" id="username" name="username" value="{{.Data.Username}}" autocomplete="username" autofocus required></div>
+        <div class="field"><label for="password">Password</label><input type="password" id="password" name="password" autocomplete="current-password" required></div>
+        <button class="btn primary full" type="submit">Sign in</button>
+      </form>
+    </div>
+    <p class="hint center">Accounts are created by the administrator.</p>
+  </div>
+</div>
+{{end}}

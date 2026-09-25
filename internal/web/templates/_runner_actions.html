@@ -1,0 +1,31 @@
+{{define "runner_actions"}}
+{{- $r := .Runner -}}
+{{- $table := eq .View "table" -}}
+{{- $scope := .Scope -}}
+{{- $q := .Query -}}
+{{- if eq $r.State "creating"}}
+{{- else if eq $r.State "failed"}}
+<form method="post" action="/runners/{{$r.Name}}/dismiss" {{if $table}}hx-post="/runners/{{$r.Name}}/dismiss" hx-target="#runners-table" hx-swap="outerHTML"{{end}}>
+  <input type="hidden" name="view" value="{{.View}}"><input type="hidden" name="scope" value="{{$scope}}"><input type="hidden" name="q" value="{{$q}}">
+  <button class="btn small" type="submit">Dismiss</button>
+</form>
+{{- else}}
+{{- if eq $r.State "running"}}
+<form method="post" action="/runners/{{$r.Name}}/stop" {{if $table}}hx-post="/runners/{{$r.Name}}/stop" hx-target="#runners-table" hx-swap="outerHTML"{{end}}>
+  <input type="hidden" name="view" value="{{.View}}"><input type="hidden" name="scope" value="{{$scope}}"><input type="hidden" name="q" value="{{$q}}">
+  <button class="btn small" type="submit">Stop</button>
+</form>
+{{- else if eq $r.State "paused"}}
+<form method="post" action="/runners/{{$r.Name}}/resume" {{if $table}}hx-post="/runners/{{$r.Name}}/resume" hx-target="#runners-table" hx-swap="outerHTML"{{end}}>
+  <input type="hidden" name="view" value="{{.View}}"><input type="hidden" name="scope" value="{{$scope}}"><input type="hidden" name="q" value="{{$q}}">
+  <button class="btn small" type="submit">Resume</button>
+</form>
+{{- else}}
+<form method="post" action="/runners/{{$r.Name}}/start" {{if $table}}hx-post="/runners/{{$r.Name}}/start" hx-target="#runners-table" hx-swap="outerHTML"{{end}}>
+  <input type="hidden" name="view" value="{{.View}}"><input type="hidden" name="scope" value="{{$scope}}"><input type="hidden" name="q" value="{{$q}}">
+  <button class="btn small" type="submit">Start</button>
+</form>
+{{- end}}
+<a class="btn small danger" href="/runners/{{$r.Name}}/delete" hx-get="/runners/{{$r.Name}}/delete" hx-target="#modal" hx-swap="innerHTML">Delete</a>
+{{- end}}
+{{end}}
