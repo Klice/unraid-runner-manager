@@ -27,6 +27,40 @@ Because runners register with a single-use token, the app cannot deregister them
 | Data folder on the host | `<runner data root>/<user>/<runner>` | `/mnt/user/appdata/github-runners/max/brave-little-teapot` |
 | Work directory | `<data folder>/work` | `/mnt/user/appdata/github-runners/max/brave-little-teapot/work` |
 
+## Using the app
+
+### First sign-in
+
+The administrator creates your account and gives you a temporary password. Sign in with it and the app asks you to pick your own password before showing anything else.
+
+### Create a runner
+
+1. On GitHub open the repository that should get the runner, go to **Settings → Actions → Runners**, and click **New self-hosted runner**. Ignore the download and configure commands. Copy only the value after `--token` from the configure step. The token is valid for one hour and can be used once.
+2. In the app click **New runner**.
+3. Paste the repository as `owner/repo` or as its GitHub URL, paste the token, and optionally add comma-separated labels such as `toaster, gpu`.
+4. Click **Create runner**. The app picks a name like `brave-little-teapot`, pulls the runner image if needed, creates the container, and starts it. The page shows the progress and switches to the log view once the container is up.
+5. Back in GitHub, the runner appears under **Settings → Actions → Runners** as **Idle** within a minute or two. If it does not, open the runner in the app and check the logs. A wrong or expired token shows up there as a registration error, in which case delete the runner and create it again with a fresh token.
+
+Use it in a workflow with the default labels or one of yours:
+
+```yaml
+jobs:
+  build:
+    runs-on: [self-hosted, linux, x64]
+```
+
+Runners are started with `restart=always`, so they survive an Unraid reboot without any manual action.
+
+### Day to day
+
+- The **Runners** page refreshes on its own and mirrors the container state: running, stopped, paused, or creating. Use the buttons on each row to stop, start, or resume a runner.
+- Click a runner name to see its details and a live log stream. Pick 100, 500, or 2000 lines and turn **Follow** off to scroll back.
+- Admins see every runner with an **Owner** column and can switch between **All users** and **Mine**. Other users see only their own.
+
+### Delete a runner
+
+Click **Delete** on the runner and confirm. This removes the container and its data folder on the server. The app has no GitHub credentials, so the runner keeps showing as **Offline** in the repository until you remove it under **Settings → Actions → Runners**. Do that whenever you delete a runner here.
+
 ## Install on Unraid
 
 1. In the Docker tab choose **Add Container**, switch to advanced view, and paste the template URL: `https://raw.githubusercontent.com/Klice/unraid-runner-manager/main/deploy/unraid-runner-manager.xml`. Or copy `deploy/unraid-runner-manager.xml` to `/boot/config/plugins/dockerMan/templates-user/` and pick it from the template dropdown.
