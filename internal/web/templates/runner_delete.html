@@ -1,0 +1,22 @@
+{{define "title"}}Delete {{.Data.Runner.Name}} · Runner Manager{{end}}
+{{define "dialog"}}
+{{- $r := .Data.Runner -}}
+<div class="dim">
+  <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="del-title">
+    <h2 id="del-title">Delete {{$r.Name}}?</h2>
+    <p>This removes everything on this server:</p>
+    <ul>
+      <li>container <span class="mono">{{$r.ContainerName}}</span></li>
+      <li>data folder <span class="mono">{{$r.DataDir}}</span></li>
+    </ul>
+    <p class="hint">The runner stays listed as offline in GitHub until you remove it under Settings → Actions → Runners. Nothing there is touched.</p>
+    <form method="post" action="/runners/{{$r.Name}}/delete" class="row-end">
+      <a class="btn" href="/runners" data-close-dialog>Cancel</a>
+      <button class="btn danger" type="submit">Delete runner</button>
+    </form>
+  </div>
+</div>
+{{end}}
+{{define "content"}}
+<div class="dialog-page">{{template "dialog" .}}</div>
+{{end}}

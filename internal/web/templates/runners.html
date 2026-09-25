@@ -1,0 +1,20 @@
+{{define "title"}}Runners · Runner Manager{{end}}
+{{define "content"}}
+{{- $d := .Data -}}
+<div class="page-head">
+  <div><h1>Runners</h1><p class="sub">{{$d.Hostname}} · {{$d.Total}} runner{{if ne $d.Total 1}}s{{end}}, {{$d.Running}} running</p></div>
+  <a class="btn primary" href="/runners/new">+ New runner</a>
+</div>
+<form class="toolbar" method="get" action="/runners">
+  {{if .User.IsAdmin}}
+  <div class="seg" role="group" aria-label="Scope">
+    <button type="submit" name="scope" value="all" aria-pressed="{{if eq $d.Scope "all"}}true{{else}}false{{end}}">All users</button>
+    <button type="submit" name="scope" value="mine" aria-pressed="{{if eq $d.Scope "mine"}}true{{else}}false{{end}}">Mine</button>
+  </div>
+  {{else}}<input type="hidden" name="scope" value="all">{{end}}
+  <input class="search" type="search" name="q" value="{{$d.Query}}" placeholder="Filter by name or repo" aria-label="Filter"
+         hx-get="/runners/table" hx-include="closest form" hx-trigger="input changed delay:300ms, search" hx-target="#runners-table" hx-swap="outerHTML">
+  <span class="refresh"><span class="dot"></span>Live</span>
+</form>
+{{template "runners_table" .}}
+{{end}}

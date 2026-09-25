@@ -1,0 +1,59 @@
+{{define "title"}}Users · Runner Manager{{end}}
+{{define "content"}}
+{{- $d := .Data -}}
+<div class="page-head"><div><h1>Users</h1><p class="sub">Each user gets their own namespace for container names and data folders.</p></div></div>
+<div class="user-grid">
+  <div class="card table-wrap">
+    <table class="narrow">
+      <thead><tr><th>User</th><th>Role</th><th>Runners</th><th>Last sign in</th><th><span class="sr-only">Actions</span></th></tr></thead>
+      <tbody>
+      {{range $d.Users}}
+        <tr{{if .Disabled}} class="disabled-row"{{end}}>
+          <td><span class="mono">{{.Username}}</span>{{if .IsSelf}} <span class="muted">(you)</span>{{end}}{{if .Disabled}} <span class="muted">disabled</span>{{end}}{{if .MustChangePassword}} <span class="muted">temporary password</span>{{end}}</td>
+          <td><span class="role">{{.Role}}</span></td>
+          <td class="tnum">{{.Runners}}</td>
+          <td class="tnum muted">{{datetime .LastLoginAt}}</td>
+          <td><div class="actions">
+            {{if .IsSelf}}
+              <a class="btn small" href="/account/password">Change password</a>
+            {{else}}
+              <form method="post" action="/users/{{.ID}}/reset"><button class="btn small" type="submit">Reset password</button></form>
+              {{if .Disabled}}
+                <form method="post" action="/users/{{.ID}}/enable"><button class="btn small" type="submit">Enable</button></form>
+                <form method="post" action="/users/{{.ID}}/delete" data-confirm="Remove {{.Username}}? Their runners must be deleted first."><button class="btn small danger" type="submit">Remove</button></form>
+              {{else}}
+                <form method="post" action="/users/{{.ID}}/disable"><button class="btn small" type="submit">Disable</button></form>
+              {{end}}
+            {{end}}
+          </div></td>
+        </tr>
+      {{end}}
+      </tbody>
+    </table>
+  </div>
+  <div class="card pad">
+    <h2>Add user</h2>
+    <form method="post" action="/users">
+      {{if $d.Error}}<div class="err" role="alert">{{$d.Error}}</div>{{end}}
+      <div class="field">
+        <label for="username">Username</label>
+        <input type="text" id="username" name="username" class="mono" value="{{$d.Username}}" placeholder="lowercase letters and digits" autocomplete="off" required>
+        <span class="hint">Becomes part of container names and folder paths, so it cannot be changed later.</span>
+      </div>
+      <div class="field">
+        <label for="role">Role</label>
+        <select id="role" name="role">
+          <option value="user"{{if eq $d.Role "user"}} selected{{end}}>user</option>
+          <option value="admin"{{if eq $d.Role "admin"}} selected{{end}}>admin</option>
+        </select>
+      </div>
+      <div class="field">
+        <label for="password">Temporary password</label>
+        <input type="text" id="password" name="password" class="mono" value="{{$d.TempPassword}}" autocomplete="off" required>
+        <span class="hint">Share it out of band. The user must change it at first sign in.</span>
+      </div>
+      <button class="btn primary" type="submit">Create user</button>
+    </form>
+  </div>
+</div>
+{{end}}

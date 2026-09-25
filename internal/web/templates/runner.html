@@ -1,0 +1,47 @@
+{{define "title"}}{{.Data.Runner.Name}} · Runner Manager{{end}}
+{{define "content"}}
+{{- $r := .Data.Runner -}}
+<p class="hint back"><a href="/runners">← Runners</a></p>
+{{if .Data.Created}}
+<div class="card pad success stack">
+  <h2>Runner requested</h2>
+  <p>Say hello to <b class="mono">{{$r.Name}}</b>. The image is being pulled and the container started. Once it registers, it shows as Idle under the repository's runners within a minute or two.</p>
+</div>
+{{end}}
+<div class="detail-head">
+  <h1 class="mono">{{$r.Name}}</h1>
+  <span class="pill {{pill $r.State}}">{{$r.State}}</span>
+  <span class="spacer"></span>
+  {{if and (not $r.Pending) $r.Running}}
+  <form method="post" action="/runners/{{$r.Name}}/restart"><button class="btn small" type="submit">Restart</button></form>
+  {{end}}
+  {{template "runner_actions" (dict "Runner" $r "View" "detail" "Scope" "all" "Query" "")}}
+</div>
+{{if $r.Error}}<div class="err" role="alert">{{$r.Error}}</div>{{end}}
+<div class="meta">
+  <span>Repo <b><a href="{{$r.RepoURL}}" target="_blank" rel="noopener">{{$r.Repo}}</a></b></span>
+  <span>Owner <b>{{$r.Owner}}</b></span>
+  <span>Container <b class="mono">{{$r.ContainerName}}</b></span>
+  <span>Data <b class="mono">{{$r.DataDir}}</b></span>
+  <span>Image <b class="mono">{{$r.Image}}</b></span>
+  {{if $r.Labels}}<span>Labels <b class="mono">{{join $r.Labels ", "}}</b></span>{{end}}
+  <span>Status <b>{{$r.Status}}</b></span>
+</div>
+{{if not $r.Pending}}
+<div class="log-bar">
+  <h2>Logs</h2>
+  <span class="spacer"></span>
+  <label class="toggle"><input type="checkbox" id="log-follow" checked> Follow</label>
+  <span class="seg" role="group" aria-label="Lines">
+    <a href="?tail=100" aria-pressed="{{if eq .Data.Tail 100}}true{{else}}false{{end}}">100</a>
+    <a href="?tail=500" aria-pressed="{{if eq .Data.Tail 500}}true{{else}}false{{end}}">500</a>
+    <a href="?tail=2000" aria-pressed="{{if eq .Data.Tail 2000}}true{{else}}false{{end}}">2000</a>
+  </span>
+</div>
+<pre class="log" id="log" data-source="/runners/{{$r.Name}}/logs?tail={{.Data.Tail}}" aria-live="polite" aria-label="Container logs">Connecting…</pre>
+{{else}}
+<div class="callout" id="pending" hx-get="/runners/{{$r.Name}}" hx-trigger="every 3s" hx-select="main" hx-target="main" hx-swap="outerHTML">
+  {{if eq $r.State "creating"}}<b>Creating.</b> {{$r.Status}}. This page refreshes automatically.{{else}}<b>Creation failed.</b> Dismiss this entry and try again.{{end}}
+</div>
+{{end}}
+{{end}}

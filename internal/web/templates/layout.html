@@ -1,0 +1,35 @@
+{{define "layout"}}<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{block "title" .}}Runner Manager{{end}}</title>
+<link rel="stylesheet" href="/static/app.css">
+<script src="/static/htmx.min.js" defer></script>
+<script src="/static/app.js" defer></script>
+</head>
+<body>
+{{if .User}}
+<header class="appbar">
+  <div class="appbar-in">
+    <a class="brand" href="/runners"><span class="brand-mark"></span>Runner Manager</a>
+    <nav class="nav">
+      <a href="/runners"{{if eq .Path "/runners"}} aria-current="page"{{end}}>Runners</a>
+      {{if .User.IsAdmin}}<a href="/users"{{if eq .Path "/users"}} aria-current="page"{{end}}>Users</a>{{end}}
+    </nav>
+    <span class="spacer"></span>
+    <div class="who">
+      <a href="/account/password" class="who-name">{{.User.Username}}</a>
+      <span class="role">{{.User.Role}}</span>
+      <form method="post" action="/logout"><button class="btn ghost small" type="submit">Sign out</button></form>
+    </div>
+  </div>
+</header>
+{{end}}
+<main class="page">
+{{if .Flash}}<div class="flash {{.Flash.Kind}}" role="status">{{.Flash.Message}}</div>{{end}}
+{{template "content" .}}
+</main>
+<div id="modal"></div>
+</body>
+</html>{{end}}

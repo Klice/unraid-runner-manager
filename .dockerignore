@@ -1,0 +1,12 @@
+.git
+.github
+.devcontainer
+.dev
+bin
+dist
+coverage.out
+coverage.html
+*.db
+README.md
+Makefile
+deploy

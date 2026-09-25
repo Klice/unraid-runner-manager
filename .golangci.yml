@@ -1,0 +1,23 @@
+version: "2"
+run:
+  timeout: 5m
+linters:
+  default: standard
+  enable:
+    - copyloopvar
+    - errorlint
+    - gocritic
+    - misspell
+    - modernize
+    - nilerr
+    - unconvert
+    - unparam
+    - usestdlibvars
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  settings:
+    goimports:
+      local-prefixes:
+        - github.com/Klice/unraid-runner-manager

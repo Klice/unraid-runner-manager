@@ -1,0 +1,45 @@
+{{define "title"}}New runner · Runner Manager{{end}}
+{{define "content"}}
+{{- $d := .Data -}}
+<div class="page-head"><div><h1>New runner</h1><p class="sub">A name, container, and data folder are generated for you.</p></div></div>
+<div class="two-col">
+  <div class="card pad">
+    <form method="post" action="/runners">
+      {{if $d.Error}}<div class="err" role="alert">{{$d.Error}}</div>{{end}}
+      <div class="field">
+        <label for="repo">Repository</label>
+        <input type="text" id="repo" name="repo" class="mono" value="{{$d.Repo}}" placeholder="owner/repo or https://github.com/owner/repo" required autofocus>
+        <span class="hint">Personal account repositories. One runner per form.</span>
+      </div>
+      <div class="field">
+        <label for="token">Runner registration token</label>
+        <input type="password" id="token" name="token" class="mono" autocomplete="off" required>
+        <span class="hint">Used once to register. It is never stored by this app.</span>
+      </div>
+      <div class="field">
+        <label for="labels">Labels <span class="muted">(optional)</span></label>
+        <input type="text" id="labels" name="labels" class="mono" value="{{$d.Labels}}" placeholder="toaster, gpu">
+        <span class="hint">Comma separated. Added on top of the default self-hosted labels.</span>
+      </div>
+      <div class="row-end">
+        <a class="btn" href="/runners">Cancel</a>
+        <button class="btn primary" type="submit">Create runner</button>
+      </div>
+    </form>
+  </div>
+  <div>
+    <div class="card pad stack">
+      <h2>Where to get the token</h2>
+      <ol class="steps">
+        <li>Open the repository on GitHub.</li>
+        <li>Settings → Actions → Runners → <b>New self-hosted runner</b>.</li>
+        <li>Copy the value after <span class="mono">--token</span>. It expires in one hour.</li>
+      </ol>
+    </div>
+    <div class="callout">
+      <b>What gets created</b><br>
+      Container <span class="mono">{{$d.ContainerPrefix}}-{{$d.Owner}}-&lt;name&gt;</span> from <span class="mono">{{$d.Image}}</span>, data in <span class="mono">{{$d.HostRoot}}/{{$d.Owner}}/&lt;name&gt;</span>, restart policy always so it comes back after a reboot.
+    </div>
+  </div>
+</div>
+{{end}}
