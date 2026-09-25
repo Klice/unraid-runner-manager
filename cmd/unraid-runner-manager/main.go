@@ -95,6 +95,7 @@ func run(logger *slog.Logger) error {
 		return err
 	}
 	go purgeSessions(ctx, st, logger)
+	go runners.RunUpdater(ctx, cfg.UpdateInterval, time.Minute)
 
 	httpServer := &http.Server{
 		Addr:              cfg.ListenAddr,
@@ -103,7 +104,7 @@ func run(logger *slog.Logger) error {
 	}
 	errCh := make(chan error, 1)
 	go func() {
-		logger.Info("listening", "addr", cfg.ListenAddr, "version", version, "image", cfg.RunnerImage, "hostRoot", cfg.RunnerDataHostRoot)
+		logger.Info("listening", "addr", cfg.ListenAddr, "version", version, "image", cfg.RunnerImage, "hostRoot", cfg.RunnerDataHostRoot, "updateEvery", cfg.UpdateInterval)
 		errCh <- httpServer.ListenAndServe()
 	}()
 	select {

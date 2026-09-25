@@ -28,12 +28,14 @@ var pageFiles = []string{"login", "runners", "runner_new", "runner", "runner_del
 
 func loadViews() (*views, error) {
 	funcs := template.FuncMap{
-		"date":     func(t time.Time) string { return t.Local().Format("2006-01-02") },
-		"datetime": formatOptional,
-		"pill":     pillClass,
-		"join":     strings.Join,
-		"lower":    strings.ToLower,
-		"dict":     dict,
+		"date":        func(t time.Time) string { return t.Local().Format("2006-01-02") },
+		"datetime":    func(t time.Time) string { return t.Local().Format("2006-01-02 15:04") },
+		"optdatetime": formatOptional,
+		"duration":    formatDuration,
+		"pill":        pillClass,
+		"join":        strings.Join,
+		"lower":       strings.ToLower,
+		"dict":        dict,
 	}
 	base, err := template.New("").Funcs(funcs).ParseFS(templateFS, "templates/layout.html", "templates/_runners_table.html", "templates/_runner_actions.html")
 	if err != nil {
@@ -69,6 +71,19 @@ func dict(kv ...any) (map[string]any, error) {
 	return out, nil
 }
 
+func formatDuration(d time.Duration) string {
+	switch {
+	case d >= 24*time.Hour && d%(24*time.Hour) == 0:
+		return fmt.Sprintf("%dd", d/(24*time.Hour))
+	case d >= time.Hour && d%time.Hour == 0:
+		return fmt.Sprintf("%dh", d/time.Hour)
+	case d >= time.Minute && d%time.Minute == 0:
+		return fmt.Sprintf("%dm", d/time.Minute)
+	default:
+		return d.String()
+	}
+}
+
 func formatOptional(t *time.Time) string {
 	if t == nil {
 		return "never"
@@ -82,7 +97,7 @@ func pillClass(state string) string {
 		return "running"
 	case runner.StatePaused, "restarting":
 		return "paused"
-	case runner.StateCreating:
+	case runner.StateCreating, runner.StateUpdating:
 		return "creating"
 	case runner.StateFailed:
 		return "failed"

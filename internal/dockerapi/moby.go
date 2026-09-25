@@ -45,6 +45,7 @@ func (m *Moby) ListByLabel(ctx context.Context, label string) ([]Container, erro
 			ID:      c.ID,
 			Name:    primaryName(c.Names),
 			Image:   c.Image,
+			ImageID: c.ImageID,
 			State:   string(c.State),
 			Status:  c.Status,
 			Created: time.Unix(c.Created, 0),
@@ -72,6 +73,14 @@ func (m *Moby) PullImage(ctx context.Context, image string) error {
 		return fmt.Errorf("pull %s: %w", image, err)
 	}
 	return nil
+}
+
+func (m *Moby) ImageID(ctx context.Context, image string) (string, error) {
+	res, err := m.cli.ImageInspect(ctx, image)
+	if err != nil {
+		return "", fmt.Errorf("inspect image %s: %w", image, err)
+	}
+	return res.ID, nil
 }
 
 func (m *Moby) Create(ctx context.Context, spec CreateSpec) (string, error) {
@@ -106,6 +115,73 @@ func (m *Moby) Create(ctx context.Context, spec CreateSpec) (string, error) {
 		return "", fmt.Errorf("create %s: %w", spec.Name, err)
 	}
 	return res.ID, nil
+}
+
+func (m *Moby) Inspect(ctx context.Context, id string) (CreateSpec, error) {
+	res, err := m.cli.ContainerInspect(ctx, id, client.ContainerInspectOptions{})
+	if err != nil {
+		return CreateSpec{}, fmt.Errorf("inspect %s: %w", id, err)
+	}
+	c := res.Container
+	spec := CreateSpec{Name: strings.TrimPrefix(c.Name, "/")}
+	if c.Config != nil {
+		spec.Image = c.Config.Image
+		spec.Env = c.Config.Env
+		spec.Labels = c.Config.Labels
+	}
+	if c.HostConfig != nil {
+		spec.RestartAlways = c.HostConfig.RestartPolicy.IsAlways()
+		if c.HostConfig.PidsLimit != nil {
+			spec.PidsLimit = *c.HostConfig.PidsLimit
+		}
+		for _, raw := range c.HostConfig.Binds {
+			spec.Binds = append(spec.Binds, parseBind(raw))
+		}
+	}
+	return spec, nil
+}
+
+func parseBind(raw string) Bind {
+	parts := strings.Split(raw, ":")
+	b := Bind{Source: parts[0]}
+	if len(parts) > 1 {
+		b.Target = parts[1]
+	}
+	if len(parts) > 2 {
+		b.ReadOnly = parts[2] == "ro"
+	}
+	return b
+}
+
+func (m *Moby) Rename(ctx context.Context, id, name string) error {
+	_, err := m.cli.ContainerRename(ctx, id, client.ContainerRenameOptions{NewName: name})
+	return err
+}
+
+func (m *Moby) Exec(ctx context.Context, id string, cmd []string) (int, error) {
+	created, err := m.cli.ExecCreate(ctx, id, client.ExecCreateOptions{Cmd: cmd})
+	if err != nil {
+		return 0, fmt.Errorf("exec create: %w", err)
+	}
+	if _, err := m.cli.ExecStart(ctx, created.ID, client.ExecStartOptions{Detach: true}); err != nil {
+		return 0, fmt.Errorf("exec start: %w", err)
+	}
+	ticker := time.NewTicker(100 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		info, err := m.cli.ExecInspect(ctx, created.ID, client.ExecInspectOptions{})
+		if err != nil {
+			return 0, fmt.Errorf("exec inspect: %w", err)
+		}
+		if !info.Running {
+			return info.ExitCode, nil
+		}
+		select {
+		case <-ctx.Done():
+			return 0, ctx.Err()
+		case <-ticker.C:
+		}
+	}
 }
 
 func (m *Moby) Start(ctx context.Context, id string) error {
