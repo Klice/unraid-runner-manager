@@ -36,6 +36,10 @@ Because runners register with a single-use token, the app cannot deregister them
 
 The app runs as root inside its container because the runner image writes root-owned files into the data folders and the app has to be able to delete them.
 
+### Tailscale
+
+The image works with Unraid's built-in Tailscale integration. Edit the container, turn on **Use Tailscale**, set a hostname, and Unraid injects its Tailscale hook at start. The template pre-sets the Tailscale state directory to `/config/tailscale`, which is inside the app data mount, so the node identity survives container updates. For a plain web app, userspace networking is enough and needs no extra capabilities. Turn on Tailscale Serve if you want HTTPS on your tailnet, and set `SECURE_COOKIES=true` when you do.
+
 ### Configuration
 
 | Variable | Default | Purpose |
