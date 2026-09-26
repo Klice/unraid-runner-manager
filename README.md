@@ -57,7 +57,7 @@ jobs:
 
 1. On GitLab open the project, go to **Settings → CI/CD → Runners**, and click **New project runner**. Set the tags and description there, decide whether it runs untagged jobs, and leave **Lock to current projects** off if other projects of yours should be able to use it. Create it and copy the `glrt-` token from the next page. Skip the install and register steps shown there.
 2. In the app click **New runner** and pick **GitLab**.
-3. Paste the project URL, for example `https://gitlab.com/max/toy-gallery`, and the token. Self-managed instances work the same way, the host in the URL is the one the runner registers with.
+3. Paste the project URL, for example `https://gitlab.com/max/toy-gallery`, and the token. Self-managed instances work the same way, the host in the URL is the one the runner registers with. Set **Concurrent jobs** if the runner should run more than one job at a time; each job gets its own container. GitHub runners always run one job at a time, so for GitHub create more runners instead.
 4. Click **Create runner**. The app checks the token with GitLab right away, writes the runner's `config.toml` into its data folder, pulls the image if needed, and starts the container. A rejected token fails immediately with that reason.
 5. Back in GitLab, the runner shows as online under **Settings → CI/CD → Runners** within a minute or two.
 
