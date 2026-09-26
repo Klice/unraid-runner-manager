@@ -1,14 +1,14 @@
 # unraid-runner-manager
 
-A small web app for hosting self-hosted GitHub Actions runners on Unraid without clicking through the Docker tab.
+A small web app for hosting self-hosted GitHub Actions and GitLab CI runners on Unraid without clicking through the Docker tab.
 
-- Create a runner by pasting a repository and a registration token. Everything else, including a human-readable runner name like `fluffy-toaster`, the container name, and the data folder, is generated.
+- Create a runner by pasting a repository or project URL and a token. Everything else, including a human-readable runner name like `fluffy-toaster`, the container name, and the data folder, is generated.
 - Delete a runner and its data folder in one click.
 - Multiple users. An admin creates accounts, every user sees only their own runners, and admins see everything. Container names and data folders are namespaced per user so runners never clash.
 - Live container status and log streaming.
 - No database of runners. The list is read live from Docker using labels on the containers. The only stored data is user accounts and sessions in a SQLite file.
 
-Runners use the [myoung34/github-runner](https://github.com/myoung34/docker-github-actions-runner) image with the same environment and mounts as the Community Applications template, plus `--restart=always` so they come back after a reboot.
+GitHub runners use the [myoung34/github-runner](https://github.com/myoung34/docker-github-actions-runner) image with the same environment and mounts as the Community Applications template. GitLab runners use the official [gitlab/gitlab-runner](https://docs.gitlab.com/runner/install/docker/) image with the Docker executor. Both get `--restart=always` so they come back after a reboot.
 
 ## How it works
 
@@ -16,16 +16,20 @@ The app talks to the Docker Engine through the socket. Runner containers carry `
 
 Runners created this way show up in the Unraid Docker tab but have no dockerMan template, so Unraid offers Start, Stop, Logs, and Remove there but not Edit. Manage them from this app instead.
 
-Because runners register with a single-use token, the app cannot deregister them from GitHub. After deleting a runner here, remove the offline entry under the repository's Settings → Actions → Runners.
+GitHub runners register with a single-use token, so the app cannot deregister them from GitHub. After deleting one here, remove the offline entry under the repository's Settings → Actions → Runners. GitLab runners keep their authentication token in `config.toml` inside the data folder, so the app removes them from GitLab as part of delete.
 
 ## Naming convention
 
 | Thing | Pattern | Example |
 | --- | --- | --- |
-| Runner name in GitHub | `<adjective>-<noun>` or `<adjective>-<adjective>-<noun>` | `brave-little-teapot` |
-| Container | `<CONTAINER_PREFIX>-<user>-<runner>` | `Github-Runner-max-brave-little-teapot` |
+| Runner name | `<adjective>-<noun>` or `<adjective>-<adjective>-<noun>` | `brave-little-teapot` |
+| GitHub container | `<CONTAINER_PREFIX>-<user>-<runner>` | `Github-Runner-max-brave-little-teapot` |
+| GitLab container | `<GITLAB_CONTAINER_PREFIX>-<user>-<runner>` | `Gitlab-Runner-max-brave-little-teapot` |
 | Data folder on the host | `<runner data root>/<user>/<runner>` | `/mnt/user/appdata/github-runners/max/brave-little-teapot` |
-| Work directory | `<data folder>/work` | `/mnt/user/appdata/github-runners/max/brave-little-teapot/work` |
+| GitHub work directory | `<data folder>/work` | `/mnt/user/appdata/github-runners/max/brave-little-teapot/work` |
+| GitLab config, cache, builds | `<data folder>/config`, `/cache`, `/builds` | `/mnt/user/appdata/github-runners/max/brave-little-teapot/config` |
+
+For GitHub the generated name is also the runner name shown in the repository. For GitLab the name shown in the project is the description you typed when creating the runner there; the generated name is used for the container and folder only.
 
 ## Using the app
 
@@ -33,10 +37,10 @@ Because runners register with a single-use token, the app cannot deregister them
 
 The administrator creates your account and gives you a temporary password. Sign in with it and the app asks you to pick your own password before showing anything else.
 
-### Create a runner
+### Create a GitHub runner
 
 1. On GitHub open the repository that should get the runner, go to **Settings → Actions → Runners**, and click **New self-hosted runner**. Ignore the download and configure commands. Copy only the value after `--token` from the configure step. The token is valid for one hour and can be used once.
-2. In the app click **New runner**.
+2. In the app click **New runner** and pick **GitHub**.
 3. Paste the repository as `owner/repo` or as its GitHub URL, paste the token, and optionally add comma-separated labels such as `toaster, gpu`.
 4. Click **Create runner**. The app picks a name like `brave-little-teapot`, pulls the runner image if needed, creates the container, and starts it. The page shows the progress and switches to the log view once the container is up.
 5. Back in GitHub, the runner appears under **Settings → Actions → Runners** as **Idle** within a minute or two. If it does not, open the runner in the app and check the logs. A wrong or expired token shows up there as a registration error, in which case delete the runner and create it again with a fresh token.
@@ -49,6 +53,23 @@ jobs:
     runs-on: [self-hosted, linux, x64]
 ```
 
+### Create a GitLab runner
+
+1. On GitLab open the project, go to **Settings → CI/CD → Runners**, and click **New project runner**. Set the tags and description there, decide whether it runs untagged jobs, and leave **Lock to current projects** off if other projects of yours should be able to use it. Create it and copy the `glrt-` token from the next page. Skip the install and register steps shown there.
+2. In the app click **New runner** and pick **GitLab**.
+3. Paste the project URL, for example `https://gitlab.com/max/toy-gallery`, and the token. Self-managed instances work the same way, the host in the URL is the one the runner registers with.
+4. Click **Create runner**. The app checks the token with GitLab right away, writes the runner's `config.toml` into its data folder, pulls the image if needed, and starts the container. A rejected token fails immediately with that reason.
+5. Back in GitLab, the runner shows as online under **Settings → CI/CD → Runners** within a minute or two.
+
+Jobs run with the Docker executor: each job gets a fresh container from the image named in `.gitlab-ci.yml`, or the default job image when none is named. Jobs can use `docker` because the socket is bound into job containers. To share the runner with your other projects, enable it under **Other available runners** in each project's CI/CD settings.
+
+```yaml
+build:
+  image: golang:1.27
+  tags: [toaster]
+  script: go build ./...
+```
+
 Runners are started with `restart=always`, so they survive an Unraid reboot without any manual action.
 
 ### Day to day
@@ -59,7 +80,7 @@ Runners are started with `restart=always`, so they survive an Unraid reboot with
 
 ### Delete a runner
 
-Click **Delete** on the runner and confirm. This removes the container and its data folder on the server. The app has no GitHub credentials, so the runner keeps showing as **Offline** in the repository until you remove it under **Settings → Actions → Runners**. Do that whenever you delete a runner here.
+Click **Delete** on the runner and confirm. This removes the container and its data folder on the server. A GitLab runner is also removed from GitLab using the token stored in its config. A GitHub runner keeps showing as **Offline** in the repository until you remove it under **Settings → Actions → Runners**, because the app has no GitHub credentials.
 
 ## Install on Unraid
 
@@ -79,8 +100,11 @@ The app runs as root inside its container because the runner image writes root-o
 | `RUNNER_DATA_DIR` | `/runners` | Where the runner data root is mounted inside this container. |
 | `RUNNER_DATA_HOST_ROOT` | detected | Host path of the runner data root. Detected from the container's own mounts when empty. |
 | `DATA_DIR` | `/config` | Folder for the SQLite database. |
-| `RUNNER_IMAGE` | `myoung34/github-runner:latest` | Image used for new runners. |
-| `CONTAINER_PREFIX` | `Github-Runner` | Prefix for runner container names. |
+| `RUNNER_IMAGE` | `myoung34/github-runner:latest` | Image used for new GitHub runners. |
+| `CONTAINER_PREFIX` | `Github-Runner` | Prefix for GitHub runner container names. |
+| `GITLAB_RUNNER_IMAGE` | `gitlab/gitlab-runner:latest` | Image used for new GitLab runners. |
+| `GITLAB_JOB_IMAGE` | `alpine:latest` | Image GitLab jobs run in when the pipeline does not name one. |
+| `GITLAB_CONTAINER_PREFIX` | `Gitlab-Runner` | Prefix for GitLab runner container names. |
 | `UNRAID_HOSTNAME` | `Tower` | Passed to runners as `HOST_HOSTNAME`. |
 | `TZ` | `UTC` | Timezone passed to runners. |
 | `LISTEN_ADDR` | `:8080` | Listen address. |
@@ -108,10 +132,13 @@ make docker-build  # build the image
 
 `make run` uses `.dev/` for the database and runner data, creates an `admin` user with the password from `DEV_ADMIN_PASSWORD` (default `change-me-please`), and listens on http://localhost:8080. Set `RUNNER_IMAGE=alpine:3.20` if you want to exercise create and delete without pulling the real runner image.
 
+Runner containers are created by the Docker daemon, so the bind mounts they get must be paths the daemon can see. Inside the dev container that is the path of the workspace on your machine, not `/workspaces/...`. The dev container exports it as `LOCAL_WORKSPACE_FOLDER` and `make run` uses it for `RUNNER_DATA_HOST_ROOT`. If you started the dev container before that variable existed, pass it by hand: `make run LOCAL_WORKSPACE_FOLDER=/path/to/unraid-runner-manager`. With the wrong path a GitLab runner fails with `Failed to load config stat /etc/gitlab-runner/config.toml`.
+
 Layout:
 
 - `cmd/unraid-runner-manager` entry point
 - `internal/runner` runner lifecycle on top of Docker
+- `internal/provider` the provider interface, with `github` and `gitlab` implementations that own parsing, registration, container spec, and deregistration
 - `internal/dockerapi` Docker client interface and the moby implementation, `internal/dockerfake` an in-memory fake for tests
 - `internal/web` HTTP handlers, templates, and static files
 - `internal/store` SQLite users and sessions
