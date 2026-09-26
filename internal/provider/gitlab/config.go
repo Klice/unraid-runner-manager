@@ -22,6 +22,7 @@ type RunnerConfig struct {
 	Token           string       `toml:"token"`
 	TokenObtainedAt time.Time    `toml:"token_obtained_at"`
 	Executor        string       `toml:"executor"`
+	Limit           int          `toml:"limit"`
 	Docker          DockerConfig `toml:"docker"`
 }
 

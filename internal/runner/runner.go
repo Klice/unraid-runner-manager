@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -27,6 +28,7 @@ const (
 	LabelURL      = "runner-manager.url"
 	LabelProvider = "runner-manager.provider"
 	LabelLabels   = "runner-manager.labels"
+	LabelJobs     = "runner-manager.concurrency"
 	LabelDataDir  = "runner-manager.data"
 
 	StateCreating = "creating"
@@ -56,6 +58,7 @@ type Runner struct {
 	State         string
 	Status        string
 	Labels        []string
+	Concurrency   int
 	Created       time.Time
 	DataDir       string
 	Error         string
@@ -148,11 +151,12 @@ func (s *Service) Get(ctx context.Context, name string) (Runner, error) {
 }
 
 type CreateRequest struct {
-	Owner    string
-	Provider provider.Kind
-	Target   string
-	Token    string
-	Labels   []string
+	Owner       string
+	Provider    provider.Kind
+	Target      string
+	Token       string
+	Labels      []string
+	Concurrency int
 }
 
 func (s *Service) Create(ctx context.Context, req CreateRequest) (Runner, error) {
@@ -170,6 +174,10 @@ func (s *Service) Create(ctx context.Context, req CreateRequest) (Runner, error)
 	}
 	if !prov.SupportsLabels() && len(req.Labels) > 0 {
 		return Runner{}, fmt.Errorf("%s runners take their tags from the %s UI, not from this form", prov.Kind().Title(), prov.Kind().Title())
+	}
+	concurrency, err := resolveConcurrency(prov, req.Concurrency)
+	if err != nil {
+		return Runner{}, err
 	}
 	existing, err := s.List(ctx)
 	if err != nil {
@@ -197,6 +205,7 @@ func (s *Service) Create(ctx context.Context, req CreateRequest) (Runner, error)
 		State:         StateCreating,
 		Status:        "Preparing data folder",
 		Labels:        req.Labels,
+		Concurrency:   concurrency,
 		Created:       s.opts.Now(),
 		DataDir:       s.hostDataDir(req.Owner, name),
 	}
@@ -204,6 +213,19 @@ func (s *Service) Create(ctx context.Context, req CreateRequest) (Runner, error)
 	snapshot := *r
 	s.wg.Go(func() { s.provision(prov, snapshot, token) })
 	return snapshot, nil
+}
+
+func resolveConcurrency(prov provider.Provider, requested int) (int, error) {
+	if requested == 0 {
+		return 1, nil
+	}
+	if !prov.SupportsConcurrency() && requested != 1 {
+		return 0, fmt.Errorf("%s runners run one job at a time; create more runners instead", prov.Kind().Title())
+	}
+	if requested < 1 || requested > provider.MaxConcurrency {
+		return 0, fmt.Errorf("concurrent jobs must be between 1 and %d", provider.MaxConcurrency)
+	}
+	return requested, nil
 }
 
 func (s *Service) provision(prov provider.Provider, r Runner, token string) {
@@ -258,6 +280,7 @@ func (s *Service) providerRunner(r Runner) provider.Runner {
 		URL:           r.RepoURL,
 		Display:       r.Repo,
 		Labels:        r.Labels,
+		Concurrency:   r.Concurrency,
 		HostDataDir:   r.DataDir,
 		LocalDataDir:  s.localDataDir(r.Owner, r.Name),
 	}
@@ -273,6 +296,7 @@ func (s *Service) spec(prov provider.Provider, r Runner, pr provider.Runner, tok
 		LabelRepo:     r.Repo,
 		LabelURL:      r.RepoURL,
 		LabelLabels:   strings.Join(r.Labels, ","),
+		LabelJobs:     strconv.Itoa(r.Concurrency),
 		LabelDataDir:  r.DataDir,
 	}
 	maps.Copy(labels, spec.Labels)
@@ -400,6 +424,10 @@ func fromContainer(c dockerapi.Container) Runner {
 	if err != nil {
 		kind = provider.GitHub
 	}
+	concurrency, err := strconv.Atoi(c.Labels[LabelJobs])
+	if err != nil || concurrency < 1 {
+		concurrency = 1
+	}
 	repo := c.Labels[LabelRepo]
 	repoURL := c.Labels[LabelURL]
 	if repoURL == "" {
@@ -417,6 +445,7 @@ func fromContainer(c dockerapi.Container) Runner {
 		State:         c.State,
 		Status:        c.Status,
 		Labels:        labels,
+		Concurrency:   concurrency,
 		Created:       c.Created,
 		DataDir:       c.Labels[LabelDataDir],
 	}

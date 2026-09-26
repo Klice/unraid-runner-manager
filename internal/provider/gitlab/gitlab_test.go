@@ -211,3 +211,27 @@ func TestSpecWatchtowerLabels(t *testing.T) {
 		t.Fatalf("expected only the icon label, got %v", labels)
 	}
 }
+
+func TestPrepareWritesConcurrency(t *testing.T) {
+	srv := gitlabtest.New(t)
+	p, r := newProvider(t, srv)
+	r.Concurrency = 4
+	if err := p.Prepare(t.Context(), r, srv.ValidToken); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := ReadConfig(filepath.Join(r.LocalDataDir, "config", "config.toml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Concurrent != 4 || cfg.Runners[0].Limit != 4 {
+		t.Fatalf("concurrency not written: concurrent=%d limit=%d", cfg.Concurrent, cfg.Runners[0].Limit)
+	}
+	r.Concurrency = 0
+	if err := p.Prepare(t.Context(), r, srv.ValidToken); err != nil {
+		t.Fatal(err)
+	}
+	cfg, _ = ReadConfig(filepath.Join(r.LocalDataDir, "config", "config.toml"))
+	if cfg.Concurrent != 1 || cfg.Runners[0].Limit != 1 {
+		t.Fatalf("zero should mean one job: %+v", cfg)
+	}
+}

@@ -104,14 +104,15 @@ type providerInfo struct {
 }
 
 type newRunnerData struct {
-	Provider provider.Kind
-	Repo     string
-	Labels   string
-	Error    string
-	HostRoot string
-	Owner    string
-	GitHub   providerInfo
-	GitLab   providerInfo
+	Provider    provider.Kind
+	Repo        string
+	Labels      string
+	Concurrency int
+	Error       string
+	HostRoot    string
+	Owner       string
+	GitHub      providerInfo
+	GitLab      providerInfo
 }
 
 func (s *Server) newRunnerForm(w http.ResponseWriter, r *http.Request) {
@@ -124,11 +125,12 @@ func (s *Server) newRunnerForm(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) newRunnerDefaults(r *http.Request) newRunnerData {
 	return newRunnerData{
-		Provider: provider.GitHub,
-		HostRoot: s.cfg.RunnerDataHostRoot,
-		Owner:    currentUser(r).Username,
-		GitHub:   providerInfo{Prefix: s.cfg.ContainerPrefix, Image: s.cfg.RunnerImage},
-		GitLab:   providerInfo{Prefix: s.cfg.GitLabPrefix, Image: s.cfg.GitLabRunnerImage, JobImage: s.cfg.GitLabJobImage},
+		Provider:    provider.GitHub,
+		Concurrency: 1,
+		HostRoot:    s.cfg.RunnerDataHostRoot,
+		Owner:       currentUser(r).Username,
+		GitHub:      providerInfo{Prefix: s.cfg.ContainerPrefix, Image: s.cfg.RunnerImage},
+		GitLab:      providerInfo{Prefix: s.cfg.GitLabPrefix, Image: s.cfg.GitLabRunnerImage, JobImage: s.cfg.GitLabJobImage},
 	}
 }
 
@@ -159,12 +161,21 @@ func (s *Server) createRunner(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	concurrency := 1
+	if raw := strings.TrimSpace(r.FormValue("concurrency")); kind == provider.GitLab && raw != "" {
+		if concurrency, err = strconv.Atoi(raw); err != nil {
+			respond("Concurrent jobs must be a number.")
+			return
+		}
+		data.Concurrency = concurrency
+	}
 	created, err := s.runners.Create(r.Context(), runner.CreateRequest{
-		Owner:    currentUser(r).Username,
-		Provider: kind,
-		Target:   data.Repo,
-		Token:    token,
-		Labels:   labels,
+		Owner:       currentUser(r).Username,
+		Provider:    kind,
+		Target:      data.Repo,
+		Token:       token,
+		Labels:      labels,
+		Concurrency: concurrency,
 	})
 	if err != nil {
 		respond(err.Error())

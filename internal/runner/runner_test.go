@@ -446,3 +446,33 @@ func TestLegacyContainersDefaultToGitHub(t *testing.T) {
 		t.Fatalf("legacy container not mapped to github: %+v", got)
 	}
 }
+
+func TestGitLabConcurrencyRoundTrip(t *testing.T) {
+	fake := dockerfake.New()
+	svc, root, srv := newServiceWithGitLab(t, fake)
+	r, err := svc.Create(t.Context(), CreateRequest{Owner: "ola", Provider: provider.GitLab, Target: srv.ProjectURL("ola/toy-gallery"), Token: srv.ValidToken, Concurrency: 3})
+	if err != nil {
+		t.Fatal(err)
+	}
+	svc.Wait()
+	got, _ := svc.Get(t.Context(), r.Name)
+	if got.Concurrency != 3 {
+		t.Fatalf("concurrency not read back from labels: %+v", got)
+	}
+	cfg, err := gitlab.ReadConfig(filepath.Join(root, "ola", r.Name, "config", "config.toml"))
+	if err != nil || cfg.Concurrent != 3 {
+		t.Fatalf("config concurrency wrong: %v %+v", err, cfg)
+	}
+	for _, bad := range []int{-1, 9} {
+		if _, err := svc.Create(t.Context(), CreateRequest{Owner: "ola", Provider: provider.GitLab, Target: srv.ProjectURL("a/b"), Token: srv.ValidToken, Concurrency: bad}); err == nil {
+			t.Fatalf("concurrency %d should be rejected", bad)
+		}
+	}
+	if _, err := svc.Create(t.Context(), CreateRequest{Owner: "max", Provider: provider.GitHub, Target: "Klice/x", Token: "T", Concurrency: 2}); err == nil {
+		t.Fatal("github should reject concurrency above one")
+	}
+	gh := create(t, svc, "max", "Klice/homelab")
+	if got, _ := svc.Get(t.Context(), gh.Name); got.Concurrency != 1 {
+		t.Fatalf("github runners default to one job, got %d", got.Concurrency)
+	}
+}

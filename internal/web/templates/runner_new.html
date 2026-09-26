@@ -30,6 +30,11 @@
         <input type="text" id="labels" name="labels" class="mono" value="{{$d.Labels}}" placeholder="toaster, gpu">
         <span class="hint">Comma separated. Added on top of the default self-hosted labels.</span>
       </div>
+      <div class="field" data-only="gitlab">
+        <label for="concurrency">Concurrent jobs</label>
+        <input type="number" id="concurrency" name="concurrency" value="{{$d.Concurrency}}" min="1" max="8" step="1" class="short">
+        <span class="hint">How many jobs this runner may run at the same time. Each job gets its own container.</span>
+      </div>
       <div class="row-end">
         <a class="btn" href="/runners">Cancel</a>
         <button class="btn primary" type="submit">Create runner</button>

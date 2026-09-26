@@ -35,6 +35,9 @@ func (p *Provider) Kind() provider.Kind     { return provider.GitHub }
 func (p *Provider) Image() string           { return p.opts.Image }
 func (p *Provider) ContainerPrefix() string { return p.opts.Prefix }
 func (p *Provider) SupportsLabels() bool    { return true }
+func (p *Provider) SupportsConcurrency() bool {
+	return false
+}
 
 func (p *Provider) ParseTarget(input string) (provider.Target, error) {
 	repo, err := ParseRepo(input)

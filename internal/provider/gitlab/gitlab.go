@@ -56,6 +56,9 @@ func (p *Provider) Kind() provider.Kind     { return provider.GitLab }
 func (p *Provider) Image() string           { return p.opts.Image }
 func (p *Provider) ContainerPrefix() string { return p.opts.Prefix }
 func (p *Provider) SupportsLabels() bool    { return false }
+func (p *Provider) SupportsConcurrency() bool {
+	return true
+}
 
 func (p *Provider) ParseTarget(input string) (provider.Target, error) {
 	proj, err := ParseProject(input)
@@ -79,8 +82,9 @@ func (p *Provider) Prepare(ctx context.Context, r provider.Runner, token string)
 			return fmt.Errorf("create %s folder: %w", sub, err)
 		}
 	}
+	concurrency := max(r.Concurrency, 1)
 	cfg := Config{
-		Concurrent: 1,
+		Concurrent: concurrency,
 		Runners: []RunnerConfig{{
 			Name:            r.Name,
 			URL:             proj.BaseURL(),
@@ -88,6 +92,7 @@ func (p *Provider) Prepare(ctx context.Context, r provider.Runner, token string)
 			Token:           token,
 			TokenObtainedAt: p.opts.Now().UTC(),
 			Executor:        "docker",
+			Limit:           concurrency,
 			Docker: DockerConfig{
 				Image:        p.opts.JobImage,
 				DisableCache: true,

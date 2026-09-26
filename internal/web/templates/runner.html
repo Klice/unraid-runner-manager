@@ -25,6 +25,7 @@
   <span>Data <b class="mono">{{$r.DataDir}}</b></span>
   <span>Image <b class="mono">{{$r.Image}}</b></span>
   {{if $r.Labels}}<span>Labels <b class="mono">{{join $r.Labels ", "}}</b></span>{{end}}
+  {{if $r.IsGitLab}}<span>Concurrent jobs <b>{{$r.Concurrency}}</b></span>{{end}}
   <span>Status <b>{{$r.Status}}</b></span>
 </div>
 {{if not $r.Pending}}
