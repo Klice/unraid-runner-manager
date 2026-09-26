@@ -49,9 +49,24 @@
     });
   }
 
+  function wireProviderChoice() {
+    var wrap = document.getElementById("new-runner");
+    if (!wrap) return;
+    var repo = document.getElementById("repo");
+    function apply(provider) {
+      wrap.dataset.provider = provider;
+      if (repo) repo.placeholder = repo.dataset["placeholder" + provider.charAt(0).toUpperCase() + provider.slice(1)] || "";
+    }
+    wrap.querySelectorAll('input[name="provider"]').forEach(function (radio) {
+      radio.addEventListener("change", function () { if (radio.checked) apply(radio.value); });
+      if (radio.checked) apply(radio.value);
+    });
+  }
+
   document.addEventListener("DOMContentLoaded", function () {
     startLogs();
     wireDialogs();
     wireConfirms();
+    wireProviderChoice();
   });
 })();

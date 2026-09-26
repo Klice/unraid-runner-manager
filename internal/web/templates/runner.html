@@ -5,7 +5,7 @@
 {{if .Data.Created}}
 <div class="card pad success stack">
   <h2>Runner requested</h2>
-  <p>Say hello to <b class="mono">{{$r.Name}}</b>. The image is being pulled and the container started. Once it registers, it shows as Idle under the repository's runners within a minute or two.</p>
+  <p>Say hello to <b class="mono">{{$r.Name}}</b>. The image is being pulled and the container started. {{if $r.IsGitLab}}Once it connects, it shows as online under the project's runners within a minute or two.{{else}}Once it registers, it shows as Idle under the repository's runners within a minute or two.{{end}}</p>
 </div>
 {{end}}
 <div class="detail-head">
@@ -19,7 +19,7 @@
 </div>
 {{if $r.Error}}<div class="err" role="alert">{{$r.Error}}</div>{{end}}
 <div class="meta">
-  <span>Repo <b><a href="{{$r.RepoURL}}" target="_blank" rel="noopener">{{$r.Repo}}</a></b></span>
+  <span>{{$r.Provider.Title}} <b><a href="{{$r.RepoURL}}" target="_blank" rel="noopener">{{$r.Repo}}</a></b></span>
   <span>Owner <b>{{$r.Owner}}</b></span>
   <span>Container <b class="mono">{{$r.ContainerName}}</b></span>
   <span>Data <b class="mono">{{$r.DataDir}}</b></span>

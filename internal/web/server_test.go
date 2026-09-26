@@ -20,6 +20,10 @@ import (
 	"github.com/Klice/unraid-runner-manager/internal/config"
 	"github.com/Klice/unraid-runner-manager/internal/dockerfake"
 	"github.com/Klice/unraid-runner-manager/internal/names"
+	"github.com/Klice/unraid-runner-manager/internal/provider"
+	"github.com/Klice/unraid-runner-manager/internal/provider/github"
+	"github.com/Klice/unraid-runner-manager/internal/provider/gitlab"
+	"github.com/Klice/unraid-runner-manager/internal/provider/gitlab/gitlabtest"
 	"github.com/Klice/unraid-runner-manager/internal/runner"
 	"github.com/Klice/unraid-runner-manager/internal/store"
 )
@@ -31,6 +35,7 @@ type env struct {
 	runners *runner.Service
 	store   *store.Store
 	root    string
+	gitlab  *gitlabtest.Server
 }
 
 func newEnv(t *testing.T) *env {
@@ -47,16 +52,17 @@ func newEnv(t *testing.T) *env {
 	})
 	fake := dockerfake.New()
 	root := filepath.Join(dir, "runners")
+	gl := gitlabtest.New(t)
 	svc := runner.New(runner.Options{
-		Docker:          fake,
-		Names:           names.New(rand.NewPCG(9, 9)),
-		Image:           "myoung34/github-runner:latest",
-		ContainerPrefix: "Github-Runner",
-		HostRoot:        "/mnt/user/appdata/github-runners",
-		LocalRoot:       root,
-		Hostname:        "Tower",
-		Timezone:        "UTC",
-		Logger:          slog.New(slog.NewTextHandler(io.Discard, nil)),
+		Docker: fake,
+		Names:  names.New(rand.NewPCG(9, 9)),
+		Providers: provider.Registry{
+			provider.GitHub: github.New(github.Options{Image: "myoung34/github-runner:latest", Prefix: "Github-Runner", Hostname: "Tower", Timezone: "UTC"}),
+			provider.GitLab: gitlab.New(gitlab.Options{Image: "gitlab/gitlab-runner:latest", JobImage: "alpine:latest", Prefix: "Gitlab-Runner", Timezone: "UTC", HTTP: gl.Client()}),
+		},
+		HostRoot:  "/mnt/user/appdata/github-runners",
+		LocalRoot: root,
+		Logger:    slog.New(slog.NewTextHandler(io.Discard, nil)),
 	})
 	cfg, _ := config.FromEnv(func(string) (string, bool) { return "", false })
 	cfg.RunnerDataHostRoot = "/mnt/user/appdata/github-runners"
@@ -75,7 +81,7 @@ func newEnv(t *testing.T) *env {
 	}
 	ts := httptest.NewServer(srv)
 	t.Cleanup(ts.Close)
-	return &env{t: t, ts: ts, fake: fake, runners: svc, store: st, root: root}
+	return &env{t: t, ts: ts, fake: fake, runners: svc, store: st, root: root, gitlab: gl}
 }
 
 func (e *env) client() *http.Client {
@@ -140,7 +146,7 @@ func body(t *testing.T, res *http.Response) string {
 
 func (e *env) createRunner(c *http.Client, repo string) string {
 	e.t.Helper()
-	res := e.post(c, "/runners", url.Values{"repo": {repo}, "token": {"TOKEN"}, "labels": {""}}, nil)
+	res := e.post(c, "/runners", url.Values{"provider": {"github"}, "repo": {repo}, "token": {"TOKEN"}, "labels": {""}}, nil)
 	if res.StatusCode != http.StatusSeeOther {
 		e.t.Fatalf("create runner: status %d body %s", res.StatusCode, body(e.t, res))
 	}
@@ -240,17 +246,21 @@ func TestCreateListAndScoping(t *testing.T) {
 func TestCreateValidation(t *testing.T) {
 	e := newEnv(t)
 	c := e.login("ola", "ola-password-1")
-	res := e.post(c, "/runners", url.Values{"repo": {"not a repo"}, "token": {"T"}}, nil)
+	res := e.post(c, "/runners", url.Values{"provider": {"github"}, "repo": {"not a repo"}, "token": {"T"}}, nil)
 	if res.StatusCode != http.StatusUnprocessableEntity || !strings.Contains(body(t, res), "owner/repo") {
 		t.Fatal("expected repo validation error")
 	}
-	res = e.post(c, "/runners", url.Values{"repo": {"a/b"}, "token": {" "}}, nil)
+	res = e.post(c, "/runners", url.Values{"provider": {"github"}, "repo": {"a/b"}, "token": {" "}}, nil)
 	if res.StatusCode != http.StatusUnprocessableEntity || !strings.Contains(body(t, res), "token is required") {
 		t.Fatal("expected token validation error")
 	}
-	res = e.post(c, "/runners", url.Values{"repo": {"a/b"}, "token": {"T"}, "labels": {"bad label!"}}, nil)
+	res = e.post(c, "/runners", url.Values{"provider": {"github"}, "repo": {"a/b"}, "token": {"T"}, "labels": {"bad label!"}}, nil)
 	if res.StatusCode != http.StatusUnprocessableEntity {
 		t.Fatal("expected label validation error")
+	}
+	res = e.post(c, "/runners", url.Values{"provider": {"bitbucket"}, "repo": {"a/b"}, "token": {"T"}}, nil)
+	if res.StatusCode != http.StatusUnprocessableEntity || !strings.Contains(body(t, res), "Pick GitHub or GitLab") {
+		t.Fatal("unknown provider should be rejected")
 	}
 	if e.fake.Count() != 0 {
 		t.Fatal("no container should have been created")
@@ -411,4 +421,73 @@ func TestLogout(t *testing.T) {
 
 func itoa(n int64) string {
 	return strconv.FormatInt(n, 10)
+}
+
+func TestCreateGitLabRunnerViaForm(t *testing.T) {
+	e := newEnv(t)
+	c := e.login("ola", "ola-password-1")
+
+	page := body(t, e.get(c, "/runners/new?provider=gitlab", nil))
+	if !strings.Contains(page, `data-provider="gitlab"`) || !strings.Contains(page, "New project runner") {
+		t.Fatal("new runner page should preselect gitlab and show its instructions")
+	}
+
+	res := e.post(c, "/runners", url.Values{"provider": {"gitlab"}, "repo": {e.gitlab.ProjectURL("ola/toy-gallery")}, "token": {"glrt-nope"}}, nil)
+	if res.StatusCode != http.StatusSeeOther {
+		t.Fatalf("create should be accepted and fail asynchronously, got %d", res.StatusCode)
+	}
+	e.runners.Wait()
+	loc := res.Header.Get("Location")
+	failedPage := body(t, e.get(c, strings.TrimSuffix(loc, "?created=1"), nil))
+	if !strings.Contains(failedPage, "rejected the runner token") {
+		t.Fatal("rejected token should be shown on the runner page")
+	}
+
+	res = e.post(c, "/runners", url.Values{"provider": {"gitlab"}, "repo": {e.gitlab.ProjectURL("ola/toy-gallery")}, "token": {e.gitlab.ValidToken}}, nil)
+	if res.StatusCode != http.StatusSeeOther {
+		t.Fatalf("create: %d %s", res.StatusCode, body(t, res))
+	}
+	e.runners.Wait()
+	name := regexp.MustCompile(`^/runners/([a-z0-9-]+)\?created=1$`).FindStringSubmatch(res.Header.Get("Location"))[1]
+	detail := body(t, e.get(c, "/runners/"+name, nil))
+	if !strings.Contains(detail, "Gitlab-Runner-ola-"+name) || !strings.Contains(detail, "GitLab") {
+		t.Fatal("detail page should show the gitlab container and provider")
+	}
+	list := body(t, e.get(c, "/runners", nil))
+	if !strings.Contains(list, `class="provider gitlab"`) {
+		t.Fatal("list should mark the runner as gitlab")
+	}
+	dialog := body(t, e.get(c, "/runners/"+name+"/delete", map[string]string{"HX-Request": "true"}))
+	if !strings.Contains(dialog, "also removed from GitLab") {
+		t.Fatal("delete dialog should mention gitlab deregistration")
+	}
+	res = e.post(c, "/runners/"+name+"/delete", nil, nil)
+	if res.StatusCode != http.StatusSeeOther {
+		t.Fatalf("delete: %d", res.StatusCode)
+	}
+	if d := e.gitlab.DeletedTokens(); len(d) != 1 {
+		t.Fatalf("expected deregistration call, got %v", d)
+	}
+	if !strings.Contains(body(t, e.get(c, "/runners", nil)), "Deleted "+name) {
+		t.Fatal("flash should confirm deletion")
+	}
+}
+
+func TestDeleteGitLabRunnerWarnsWhenServerFails(t *testing.T) {
+	e := newEnv(t)
+	c := e.login("ola", "ola-password-1")
+	res := e.post(c, "/runners", url.Values{"provider": {"gitlab"}, "repo": {e.gitlab.ProjectURL("ola/toy-gallery")}, "token": {e.gitlab.ValidToken}}, nil)
+	e.runners.Wait()
+	name := regexp.MustCompile(`^/runners/([a-z0-9-]+)\?created=1$`).FindStringSubmatch(res.Header.Get("Location"))[1]
+	e.gitlab.SetFailure(500)
+	if res := e.post(c, "/runners/"+name+"/delete", nil, nil); res.StatusCode != http.StatusSeeOther {
+		t.Fatalf("delete: %d", res.StatusCode)
+	}
+	page := body(t, e.get(c, "/runners", nil))
+	if !strings.Contains(page, "could not be removed from GitLab") {
+		t.Fatal("flash should warn about failed deregistration")
+	}
+	if e.fake.Count() != 0 {
+		t.Fatal("container should be removed regardless")
+	}
 }

@@ -2,21 +2,30 @@
 {{define "content"}}
 {{- $d := .Data -}}
 <div class="page-head"><div><h1>New runner</h1><p class="sub">A name, container, and data folder are generated for you.</p></div></div>
-<div class="two-col">
+<div class="two-col" id="new-runner" data-provider="{{$d.Provider}}">
   <div class="card pad">
     <form method="post" action="/runners">
       {{if $d.Error}}<div class="err" role="alert">{{$d.Error}}</div>{{end}}
+      <fieldset class="field choice">
+        <legend>Provider</legend>
+        <label class="radio"><input type="radio" name="provider" value="github"{{if eq $d.Provider "github"}} checked{{end}}> GitHub</label>
+        <label class="radio"><input type="radio" name="provider" value="gitlab"{{if eq $d.Provider "gitlab"}} checked{{end}}> GitLab</label>
+      </fieldset>
       <div class="field">
-        <label for="repo">Repository</label>
-        <input type="text" id="repo" name="repo" class="mono" value="{{$d.Repo}}" placeholder="owner/repo or https://github.com/owner/repo" required autofocus>
-        <span class="hint">Personal account repositories. One runner per form.</span>
+        <label for="repo"><span data-only="github">Repository</span><span data-only="gitlab">Project URL</span></label>
+        <input type="text" id="repo" name="repo" class="mono" value="{{$d.Repo}}" required autofocus
+               data-placeholder-github="owner/repo or https://github.com/owner/repo"
+               data-placeholder-gitlab="https://gitlab.com/group/project">
+        <span class="hint" data-only="github">Personal account repositories. One runner per form.</span>
+        <span class="hint" data-only="gitlab">Any GitLab instance. The host in the URL is the one the runner registers with.</span>
       </div>
       <div class="field">
-        <label for="token">Runner registration token</label>
+        <label for="token"><span data-only="github">Runner registration token</span><span data-only="gitlab">Runner authentication token</span></label>
         <input type="password" id="token" name="token" class="mono" autocomplete="off" required>
-        <span class="hint">Used once to register. It is never stored by this app.</span>
+        <span class="hint" data-only="github">Used once to register. It is never stored by this app.</span>
+        <span class="hint" data-only="gitlab">Starts with <span class="mono">glrt-</span>. Stored only in the runner's own config file inside its data folder.</span>
       </div>
-      <div class="field">
+      <div class="field" data-only="github">
         <label for="labels">Labels <span class="muted">(optional)</span></label>
         <input type="text" id="labels" name="labels" class="mono" value="{{$d.Labels}}" placeholder="toaster, gpu">
         <span class="hint">Comma separated. Added on top of the default self-hosted labels.</span>
@@ -28,7 +37,7 @@
     </form>
   </div>
   <div>
-    <div class="card pad stack">
+    <div class="card pad stack" data-only="github">
       <h2>Where to get the token</h2>
       <ol class="steps">
         <li>Open the repository on GitHub.</li>
@@ -36,9 +45,22 @@
         <li>Copy the value after <span class="mono">--token</span>. It expires in one hour.</li>
       </ol>
     </div>
-    <div class="callout">
+    <div class="card pad stack" data-only="gitlab">
+      <h2>Where to get the token</h2>
+      <ol class="steps">
+        <li>Open the project on GitLab.</li>
+        <li>Settings → CI/CD → Runners → <b>New project runner</b>.</li>
+        <li>Pick the tags and description there. Leave <b>Lock to current projects</b> off if other projects should use it too.</li>
+        <li>Create it and copy the <span class="mono">glrt-</span> token from the next page. Skip the install and register steps.</li>
+      </ol>
+    </div>
+    <div class="callout" data-only="github">
       <b>What gets created</b><br>
-      Container <span class="mono">{{$d.ContainerPrefix}}-{{$d.Owner}}-&lt;name&gt;</span> from <span class="mono">{{$d.Image}}</span>, data in <span class="mono">{{$d.HostRoot}}/{{$d.Owner}}/&lt;name&gt;</span>, restart policy always so it comes back after a reboot.
+      Container <span class="mono">{{$d.GitHub.Prefix}}-{{$d.Owner}}-&lt;name&gt;</span> from <span class="mono">{{$d.GitHub.Image}}</span>, data in <span class="mono">{{$d.HostRoot}}/{{$d.Owner}}/&lt;name&gt;</span>, restart policy always so it comes back after a reboot.
+    </div>
+    <div class="callout" data-only="gitlab">
+      <b>What gets created</b><br>
+      Container <span class="mono">{{$d.GitLab.Prefix}}-{{$d.Owner}}-&lt;name&gt;</span> from <span class="mono">{{$d.GitLab.Image}}</span>, config, cache and builds in <span class="mono">{{$d.HostRoot}}/{{$d.Owner}}/&lt;name&gt;</span>, Docker executor with <span class="mono">{{$d.GitLab.JobImage}}</span> as the default job image, restart policy always.
     </div>
   </div>
 </div>

@@ -134,3 +134,12 @@ input[type=text],input[type=password],input[type=search],select{border:1px solid
 .login-wrap{min-height:70vh;display:grid;place-items:center;padding-block:40px}
 .login{width:100%;max-width:360px}
 .login .brand{justify-content:center;margin-bottom:22px;font-size:16px}
+
+.provider{display:inline-block;font-size:10px;letter-spacing:.06em;text-transform:uppercase;border:1px solid var(--border-strong);border-radius:4px;padding:0 5px;margin-right:4px;color:var(--muted);vertical-align:middle}
+.provider.gitlab{color:var(--warn);border-color:var(--warn)}
+fieldset.choice{border:0;padding:0;margin:0 0 16px}
+fieldset.choice legend{font-weight:500;margin-bottom:6px;padding:0}
+.radio{display:inline-flex;align-items:center;gap:6px;margin-right:18px;font-weight:400;cursor:pointer}
+[data-only]{display:none}
+[data-provider="github"] [data-only="github"],[data-provider="gitlab"] [data-only="gitlab"]{display:revert}
+[data-provider="github"] .field[data-only="github"],[data-provider="gitlab"] .field[data-only="gitlab"]{display:flex}

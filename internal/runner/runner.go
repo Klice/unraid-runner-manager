@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -14,18 +15,19 @@ import (
 	"time"
 
 	"github.com/Klice/unraid-runner-manager/internal/dockerapi"
-	"github.com/Klice/unraid-runner-manager/internal/github"
 	"github.com/Klice/unraid-runner-manager/internal/names"
+	"github.com/Klice/unraid-runner-manager/internal/provider"
 )
 
 const (
-	LabelManaged = "runner-manager.managed"
-	LabelOwner   = "runner-manager.owner"
-	LabelName    = "runner-manager.name"
-	LabelRepo    = "runner-manager.repo"
-	LabelLabels  = "runner-manager.labels"
-	LabelDataDir = "runner-manager.data"
-	labelIcon    = "net.unraid.docker.icon"
+	LabelManaged  = "runner-manager.managed"
+	LabelOwner    = "runner-manager.owner"
+	LabelName     = "runner-manager.name"
+	LabelRepo     = "runner-manager.repo"
+	LabelURL      = "runner-manager.url"
+	LabelProvider = "runner-manager.provider"
+	LabelLabels   = "runner-manager.labels"
+	LabelDataDir  = "runner-manager.data"
 
 	StateCreating = "creating"
 	StateFailed   = "failed"
@@ -39,11 +41,13 @@ const (
 var (
 	ErrNotFound   = errors.New("runner not found")
 	ErrInProgress = errors.New("runner is still being created")
+	ErrDeregister = errors.New("runner was removed locally but not on the server")
 )
 
 type Runner struct {
 	Name          string
 	Owner         string
+	Provider      provider.Kind
 	Repo          string
 	RepoURL       string
 	ContainerName string
@@ -60,19 +64,18 @@ type Runner struct {
 func (r Runner) Pending() bool { return r.State == StateCreating || r.State == StateFailed }
 func (r Runner) Running() bool { return r.State == StateRunning }
 func (r Runner) Paused() bool  { return r.State == StatePaused }
+func (r Runner) IsGitLab() bool {
+	return r.Provider == provider.GitLab
+}
 
 type Options struct {
-	Docker          dockerapi.Client
-	Names           *names.Generator
-	Image           string
-	Icon            string
-	ContainerPrefix string
-	HostRoot        string
-	LocalRoot       string
-	Hostname        string
-	Timezone        string
-	Logger          *slog.Logger
-	Now             func() time.Time
+	Docker    dockerapi.Client
+	Providers provider.Registry
+	Names     *names.Generator
+	HostRoot  string
+	LocalRoot string
+	Logger    *slog.Logger
+	Now       func() time.Time
 }
 
 type Service struct {
@@ -93,6 +96,10 @@ func New(opts Options) *Service {
 		opts.Names = names.New(nil)
 	}
 	return &Service{opts: opts, pending: map[string]*Runner{}}
+}
+
+func (s *Service) Provider(kind provider.Kind) (provider.Provider, error) {
+	return s.opts.Providers.Get(kind)
 }
 
 func (s *Service) List(ctx context.Context) ([]Runner, error) {
@@ -141,15 +148,28 @@ func (s *Service) Get(ctx context.Context, name string) (Runner, error) {
 }
 
 type CreateRequest struct {
-	Owner  string
-	Repo   github.Repo
-	Token  string
-	Labels []string
+	Owner    string
+	Provider provider.Kind
+	Target   string
+	Token    string
+	Labels   []string
 }
 
 func (s *Service) Create(ctx context.Context, req CreateRequest) (Runner, error) {
-	if strings.TrimSpace(req.Token) == "" {
+	prov, err := s.Provider(req.Provider)
+	if err != nil {
+		return Runner{}, err
+	}
+	target, err := prov.ParseTarget(req.Target)
+	if err != nil {
+		return Runner{}, err
+	}
+	token := strings.TrimSpace(req.Token)
+	if token == "" {
 		return Runner{}, errors.New("runner token is required")
+	}
+	if !prov.SupportsLabels() && len(req.Labels) > 0 {
+		return Runner{}, fmt.Errorf("%s runners take their tags from the %s UI, not from this form", prov.Kind().Title(), prov.Kind().Title())
 	}
 	existing, err := s.List(ctx)
 	if err != nil {
@@ -169,10 +189,11 @@ func (s *Service) Create(ctx context.Context, req CreateRequest) (Runner, error)
 	r := &Runner{
 		Name:          name,
 		Owner:         req.Owner,
-		Repo:          req.Repo.FullName(),
-		RepoURL:       req.Repo.URL(),
-		ContainerName: s.containerName(req.Owner, name),
-		Image:         s.opts.Image,
+		Provider:      prov.Kind(),
+		Repo:          target.Display,
+		RepoURL:       target.URL,
+		ContainerName: prov.ContainerPrefix() + "-" + req.Owner + "-" + name,
+		Image:         prov.Image(),
 		State:         StateCreating,
 		Status:        "Preparing data folder",
 		Labels:        req.Labels,
@@ -181,16 +202,15 @@ func (s *Service) Create(ctx context.Context, req CreateRequest) (Runner, error)
 	}
 	s.pending[name] = r
 	snapshot := *r
-	token := strings.TrimSpace(req.Token)
-	s.wg.Go(func() { s.provision(snapshot, token) })
+	s.wg.Go(func() { s.provision(prov, snapshot, token) })
 	return snapshot, nil
 }
 
-func (s *Service) provision(r Runner, token string) {
+func (s *Service) provision(prov provider.Provider, r Runner, token string) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
 	defer cancel()
-	log := s.opts.Logger.With("runner", r.Name, "owner", r.Owner)
-	stage, err := s.runProvisionSteps(ctx, r, token)
+	log := s.opts.Logger.With("runner", r.Name, "owner", r.Owner, "provider", r.Provider)
+	stage, err := s.runProvisionSteps(ctx, prov, r, token)
 	if err != nil {
 		log.Error("runner creation failed", "stage", stage, "err", err)
 		s.markFailed(r.Name, stage, err)
@@ -205,17 +225,21 @@ func (s *Service) provision(r Runner, token string) {
 	log.Info("runner created", "container", r.ContainerName, "repo", r.Repo)
 }
 
-func (s *Service) runProvisionSteps(ctx context.Context, r Runner, token string) (string, error) {
-	local := s.localDataDir(r.Owner, r.Name)
-	if err := os.MkdirAll(filepath.Join(local, "work"), 0o755); err != nil {
+func (s *Service) runProvisionSteps(ctx context.Context, prov provider.Provider, r Runner, token string) (string, error) {
+	pr := s.providerRunner(r)
+	if err := os.MkdirAll(filepath.Join(pr.LocalDataDir, "work"), 0o755); err != nil {
 		return "creating data folder", err
 	}
+	s.setPendingStatus(r.Name, "Registering with "+prov.Kind().Title())
+	if err := prov.Prepare(ctx, pr, token); err != nil {
+		return "registering with " + prov.Kind().Title(), err
+	}
 	s.setPendingStatus(r.Name, "Pulling image")
-	if err := s.opts.Docker.PullImage(ctx, s.opts.Image); err != nil {
+	if err := s.opts.Docker.PullImage(ctx, prov.Image()); err != nil {
 		return "pulling image", err
 	}
 	s.setPendingStatus(r.Name, "Creating container")
-	id, err := s.opts.Docker.Create(ctx, s.spec(r, token))
+	id, err := s.opts.Docker.Create(ctx, s.spec(prov, r, pr, token))
 	if err != nil {
 		return "creating container", err
 	}
@@ -224,6 +248,36 @@ func (s *Service) runProvisionSteps(ctx context.Context, r Runner, token string)
 		return "starting container", errors.Join(err, s.opts.Docker.Remove(ctx, id))
 	}
 	return "", nil
+}
+
+func (s *Service) providerRunner(r Runner) provider.Runner {
+	return provider.Runner{
+		Name:          r.Name,
+		Owner:         r.Owner,
+		ContainerName: r.ContainerName,
+		URL:           r.RepoURL,
+		Display:       r.Repo,
+		Labels:        r.Labels,
+		HostDataDir:   r.DataDir,
+		LocalDataDir:  s.localDataDir(r.Owner, r.Name),
+	}
+}
+
+func (s *Service) spec(prov provider.Provider, r Runner, pr provider.Runner, token string) dockerapi.CreateSpec {
+	spec := prov.Spec(pr, token)
+	labels := map[string]string{
+		LabelManaged:  "true",
+		LabelOwner:    r.Owner,
+		LabelName:     r.Name,
+		LabelProvider: string(r.Provider),
+		LabelRepo:     r.Repo,
+		LabelURL:      r.RepoURL,
+		LabelLabels:   strings.Join(r.Labels, ","),
+		LabelDataDir:  r.DataDir,
+	}
+	maps.Copy(labels, spec.Labels)
+	spec.Labels = labels
+	return spec
 }
 
 func (s *Service) setPendingStatus(name, status string) {
@@ -247,46 +301,6 @@ func (s *Service) markFailed(name, stage string, err error) {
 	p.Created = s.opts.Now()
 }
 
-func (s *Service) spec(r Runner, token string) dockerapi.CreateSpec {
-	work := r.DataDir + "/work"
-	return dockerapi.CreateSpec{
-		Name:  r.ContainerName,
-		Image: s.opts.Image,
-		Env: []string{
-			"TZ=" + s.opts.Timezone,
-			"HOST_OS=Unraid",
-			"HOST_HOSTNAME=" + s.opts.Hostname,
-			"HOST_CONTAINERNAME=" + r.ContainerName,
-			"REPO_URL=" + r.RepoURL,
-			"RUNNER_NAME=" + r.Name,
-			"RUNNER_TOKEN=" + token,
-			"RUNNER_SCOPE=repo",
-			"RUNNER_GROUP=",
-			"LABELS=" + strings.Join(r.Labels, ","),
-			"RUNNER_WORKDIR=" + work,
-			"DISABLE_AUTOMATIC_DEREGISTRATION=true",
-			"CONFIGURED_ACTIONS_RUNNER_FILES_DIR=/runner/persistent_files",
-		},
-		Labels: map[string]string{
-			LabelManaged: "true",
-			LabelOwner:   r.Owner,
-			LabelName:    r.Name,
-			LabelRepo:    r.Repo,
-			LabelLabels:  strings.Join(r.Labels, ","),
-			LabelDataDir: r.DataDir,
-			labelIcon:    s.opts.Icon,
-		},
-		Binds: []dockerapi.Bind{
-			{Source: "/tmp/runner", Target: "/tmp/runner"},
-			{Source: r.DataDir, Target: "/runner/persistent_files"},
-			{Source: work, Target: work},
-			{Source: "/var/run/docker.sock", Target: "/var/run/docker.sock"},
-		},
-		PidsLimit:     2048,
-		RestartAlways: true,
-	}
-}
-
 func (s *Service) Delete(ctx context.Context, name string) error {
 	r, err := s.Get(ctx, name)
 	if err != nil {
@@ -295,7 +309,16 @@ func (s *Service) Delete(ctx context.Context, name string) error {
 	if r.State == StateCreating {
 		return ErrInProgress
 	}
+	var deregisterErr error
 	if r.ContainerID != "" {
+		prov, err := s.Provider(r.Provider)
+		if err != nil {
+			return err
+		}
+		if err := prov.Deregister(ctx, s.providerRunner(r)); err != nil {
+			s.opts.Logger.Warn("deregistration failed", "runner", name, "provider", r.Provider, "err", err)
+			deregisterErr = fmt.Errorf("%w: %w", ErrDeregister, err)
+		}
 		if err := s.opts.Docker.Remove(ctx, r.ContainerID); err != nil {
 			return fmt.Errorf("remove container: %w", err)
 		}
@@ -306,8 +329,8 @@ func (s *Service) Delete(ctx context.Context, name string) error {
 	if err := os.RemoveAll(s.localDataDir(r.Owner, r.Name)); err != nil {
 		return fmt.Errorf("remove data folder: %w", err)
 	}
-	s.opts.Logger.Info("runner deleted", "runner", name, "owner", r.Owner)
-	return nil
+	s.opts.Logger.Info("runner deleted", "runner", name, "owner", r.Owner, "provider", r.Provider)
+	return deregisterErr
 }
 
 func (s *Service) Dismiss(name string) {
@@ -360,10 +383,6 @@ func (s *Service) Wait() {
 	s.wg.Wait()
 }
 
-func (s *Service) containerName(owner, name string) string {
-	return s.opts.ContainerPrefix + "-" + owner + "-" + name
-}
-
 func (s *Service) hostDataDir(owner, name string) string {
 	return s.opts.HostRoot + "/" + owner + "/" + name
 }
@@ -377,12 +396,21 @@ func fromContainer(c dockerapi.Container) Runner {
 	if raw := c.Labels[LabelLabels]; raw != "" {
 		labels = strings.Split(raw, ",")
 	}
+	kind, err := provider.ParseKind(c.Labels[LabelProvider])
+	if err != nil {
+		kind = provider.GitHub
+	}
 	repo := c.Labels[LabelRepo]
+	repoURL := c.Labels[LabelURL]
+	if repoURL == "" {
+		repoURL = "https://github.com/" + repo
+	}
 	return Runner{
 		Name:          c.Labels[LabelName],
 		Owner:         c.Labels[LabelOwner],
+		Provider:      kind,
 		Repo:          repo,
-		RepoURL:       "https://github.com/" + repo,
+		RepoURL:       repoURL,
 		ContainerName: c.Name,
 		ContainerID:   c.ID,
 		Image:         c.Image,

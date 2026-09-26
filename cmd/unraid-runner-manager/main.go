@@ -14,6 +14,9 @@ import (
 
 	"github.com/Klice/unraid-runner-manager/internal/config"
 	"github.com/Klice/unraid-runner-manager/internal/dockerapi"
+	"github.com/Klice/unraid-runner-manager/internal/provider"
+	"github.com/Klice/unraid-runner-manager/internal/provider/github"
+	"github.com/Klice/unraid-runner-manager/internal/provider/gitlab"
 	"github.com/Klice/unraid-runner-manager/internal/runner"
 	"github.com/Klice/unraid-runner-manager/internal/store"
 	"github.com/Klice/unraid-runner-manager/internal/web"
@@ -76,16 +79,29 @@ func run(logger *slog.Logger) error {
 		}
 	}()
 
+	providers := provider.Registry{
+		provider.GitHub: github.New(github.Options{
+			Image:    cfg.RunnerImage,
+			Icon:     cfg.RunnerIcon,
+			Prefix:   cfg.ContainerPrefix,
+			Hostname: cfg.UnraidHostname,
+			Timezone: cfg.Timezone,
+		}),
+		provider.GitLab: gitlab.New(gitlab.Options{
+			Image:    cfg.GitLabRunnerImage,
+			JobImage: cfg.GitLabJobImage,
+			Icon:     cfg.GitLabRunnerIcon,
+			Prefix:   cfg.GitLabPrefix,
+			Timezone: cfg.Timezone,
+			Logger:   logger,
+		}),
+	}
 	runners := runner.New(runner.Options{
-		Docker:          docker,
-		Image:           cfg.RunnerImage,
-		Icon:            cfg.RunnerIcon,
-		ContainerPrefix: cfg.ContainerPrefix,
-		HostRoot:        cfg.RunnerDataHostRoot,
-		LocalRoot:       cfg.RunnerDataDir,
-		Hostname:        cfg.UnraidHostname,
-		Timezone:        cfg.Timezone,
-		Logger:          logger,
+		Docker:    docker,
+		Providers: providers,
+		HostRoot:  cfg.RunnerDataHostRoot,
+		LocalRoot: cfg.RunnerDataDir,
+		Logger:    logger,
 	})
 	srv, err := web.New(cfg, st, runners, logger)
 	if err != nil {
