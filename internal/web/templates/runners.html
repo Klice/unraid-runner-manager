@@ -2,11 +2,7 @@
 {{define "content"}}
 {{- $d := .Data -}}
 <div class="page-head">
-  <div>
-    <h1>Runners</h1>
-    <p class="sub">{{$d.Hostname}} · {{$d.Total}} runner{{if ne $d.Total 1}}s{{end}}, {{$d.Running}} running</p>
-    <p class="sub">{{if $d.Updates.Enabled}}Image updates every {{duration $d.Updates.Interval}}{{if $d.Updates.Checked}} · last check {{datetime $d.Updates.CheckedAt}}: {{$d.Updates.Summary}}{{else}} · first check pending{{end}}{{else}}Automatic image updates are off{{end}}</p>
-  </div>
+  <div><h1>Runners</h1><p class="sub">{{$d.Hostname}} · {{$d.Total}} runner{{if ne $d.Total 1}}s{{end}}, {{$d.Running}} running</p></div>
   <a class="btn primary" href="/runners/new">+ New runner</a>
 </div>
 <form class="toolbar" method="get" action="/runners">

@@ -29,16 +29,12 @@ type Fake struct {
 	StartErr   error
 	PullDelay  time.Duration
 	Mount      []dockerapi.MountPoint
-	ImageIDs   map[string]string
-	Busy       map[string]bool
-	ExecErr    error
-	Renamed    []string
 }
 
 var ErrNotFound = errors.New("no such container")
 
 func New() *Fake {
-	return &Fake{containers: map[string]*Record{}, LogText: map[string]string{}, ImageIDs: map[string]string{}, Busy: map[string]bool{}}
+	return &Fake{containers: map[string]*Record{}, LogText: map[string]string{}}
 }
 
 func (f *Fake) Ping(context.Context) error { return nil }
@@ -76,19 +72,6 @@ func (f *Fake) PullImage(ctx context.Context, image string) error {
 	return nil
 }
 
-func (f *Fake) ImageID(_ context.Context, image string) (string, error) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	return f.imageID(image), nil
-}
-
-func (f *Fake) imageID(image string) string {
-	if id, ok := f.ImageIDs[image]; ok {
-		return id
-	}
-	return "sha256:" + image
-}
-
 func (f *Fake) Create(_ context.Context, spec dockerapi.CreateSpec) (string, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -106,7 +89,6 @@ func (f *Fake) Create(_ context.Context, spec dockerapi.CreateSpec) (string, err
 		ID:      id,
 		Name:    spec.Name,
 		Image:   spec.Image,
-		ImageID: f.imageID(spec.Image),
 		State:   "created",
 		Status:  "Created",
 		Created: time.Now(),
@@ -114,51 +96,6 @@ func (f *Fake) Create(_ context.Context, spec dockerapi.CreateSpec) (string, err
 		Spec:    spec,
 	}
 	return id, nil
-}
-
-func (f *Fake) Inspect(_ context.Context, id string) (dockerapi.CreateSpec, error) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	r, ok := f.containers[id]
-	if !ok {
-		return dockerapi.CreateSpec{}, ErrNotFound
-	}
-	spec := r.Spec
-	spec.Name = r.Name
-	return spec, nil
-}
-
-func (f *Fake) Rename(_ context.Context, id, name string) error {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	r, ok := f.containers[id]
-	if !ok {
-		return ErrNotFound
-	}
-	for _, other := range f.containers {
-		if other.Name == name {
-			return fmt.Errorf("conflict: name %q already in use", name)
-		}
-	}
-	f.Renamed = append(f.Renamed, r.Name+"->"+name)
-	r.Name = name
-	return nil
-}
-
-func (f *Fake) Exec(_ context.Context, id string, _ []string) (int, error) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	if f.ExecErr != nil {
-		return 0, f.ExecErr
-	}
-	r, ok := f.containers[id]
-	if !ok {
-		return 0, ErrNotFound
-	}
-	if f.Busy[r.Name] {
-		return 0, nil
-	}
-	return 1, nil
 }
 
 func (f *Fake) setState(id, state, status string) error {
@@ -245,18 +182,6 @@ func (f *Fake) SetState(name, state, status string) {
 			r.Status = status
 		}
 	}
-}
-
-func (f *Fake) SetLatestImageID(image, id string) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.ImageIDs[image] = id
-}
-
-func (f *Fake) SetBusy(name string, busy bool) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.Busy[name] = busy
 }
 
 func (f *Fake) Count() int {

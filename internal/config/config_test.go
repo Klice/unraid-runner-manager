@@ -23,25 +23,6 @@ func TestDefaults(t *testing.T) {
 	if cfg.SessionTTL != 30*24*time.Hour || cfg.SecureCookies {
 		t.Fatalf("unexpected session defaults: %+v", cfg)
 	}
-	if cfg.UpdateInterval != 24*time.Hour {
-		t.Fatalf("unexpected update interval: %v", cfg.UpdateInterval)
-	}
-}
-
-func TestUpdateIntervalCanBeDisabled(t *testing.T) {
-	cfg, err := FromEnv(envFrom(map[string]string{"RUNNER_UPDATE_INTERVAL": "0"}))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cfg.UpdateInterval != 0 {
-		t.Fatalf("expected disabled updater, got %v", cfg.UpdateInterval)
-	}
-	if _, err := FromEnv(envFrom(map[string]string{"RUNNER_UPDATE_INTERVAL": "-1h"})); err == nil {
-		t.Fatal("negative interval should be rejected")
-	}
-	if _, err := FromEnv(envFrom(map[string]string{"RUNNER_UPDATE_INTERVAL": "daily"})); err == nil {
-		t.Fatal("unparsable interval should be rejected")
-	}
 }
 
 func TestOverridesAndTrimming(t *testing.T) {
