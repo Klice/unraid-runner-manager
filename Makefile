@@ -6,8 +6,11 @@ VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
 LDFLAGS := -s -w -X main.version=$(VERSION)
 GOFLAGS ?= -trimpath
 
+DEV_HOST_WORKSPACE ?= $(or $(LOCAL_WORKSPACE_FOLDER),$(CURDIR))
 DEV_DATA ?= $(CURDIR)/.dev/config
 DEV_RUNNERS ?= $(CURDIR)/.dev/runners
+DEV_DATA_HOST ?= $(DEV_HOST_WORKSPACE)/.dev/config
+DEV_RUNNERS_HOST ?= $(DEV_HOST_WORKSPACE)/.dev/runners
 DEV_ADMIN_PASSWORD ?= change-me-please
 
 .DEFAULT_GOAL := help
@@ -23,7 +26,8 @@ build: ## Build the binary into bin/
 .PHONY: run
 run: ## Run locally against the local Docker socket with a dev admin (see DEV_* vars)
 	@mkdir -p $(DEV_DATA) $(DEV_RUNNERS)
-	DATA_DIR=$(DEV_DATA) RUNNER_DATA_DIR=$(DEV_RUNNERS) RUNNER_DATA_HOST_ROOT=$(DEV_RUNNERS) \
+	@echo "runner data root on the Docker host: $(DEV_RUNNERS_HOST)"
+	DATA_DIR=$(DEV_DATA) RUNNER_DATA_DIR=$(DEV_RUNNERS) RUNNER_DATA_HOST_ROOT=$(DEV_RUNNERS_HOST) \
 	ADMIN_USERNAME=admin ADMIN_PASSWORD=$(DEV_ADMIN_PASSWORD) UNRAID_HOSTNAME=dev \
 	go run $(MODULE)
 
@@ -66,9 +70,9 @@ docker-run: ## Run the locally built image with the Docker socket and dev folder
 	@mkdir -p $(DEV_DATA) $(DEV_RUNNERS)
 	docker run --rm -p 8080:8080 \
 		-v /var/run/docker.sock:/var/run/docker.sock \
-		-v $(DEV_DATA):/config \
-		-v $(DEV_RUNNERS):/runners \
-		-e RUNNER_DATA_HOST_ROOT=$(DEV_RUNNERS) \
+		-v $(DEV_DATA_HOST):/config \
+		-v $(DEV_RUNNERS_HOST):/runners \
+		-e RUNNER_DATA_HOST_ROOT=$(DEV_RUNNERS_HOST) \
 		-e ADMIN_PASSWORD=$(DEV_ADMIN_PASSWORD) \
 		$(IMAGE):$(TAG)
 

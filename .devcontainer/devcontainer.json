@@ -17,7 +17,8 @@
     "source=unraid-runner-manager-gomodcache,target=/go/pkg/mod,type=volume"
   ],
   "containerEnv": {
-    "GOFLAGS": "-buildvcs=false"
+    "GOFLAGS": "-buildvcs=false",
+    "LOCAL_WORKSPACE_FOLDER": "${localWorkspaceFolder}"
   },
   "postCreateCommand": "bash .devcontainer/post-create.sh",
   "forwardPorts": [8080],
