@@ -78,6 +78,28 @@ Runners are started with `restart=always`, so they survive an Unraid reboot with
 - Click a runner name to see its details and a live log stream. Pick 100, 500, or 2000 lines and turn **Follow** off to scroll back.
 - Admins see every runner with an **Owner** column and can switch between **All users** and **Mine**. Other users see only their own.
 
+### Keeping runner images up to date
+
+The GitHub runner agent updates itself. Runner container images do not, so the app labels every runner for [Watchtower](https://github.com/nicholas-fedor/watchtower), and one Watchtower container on the server keeps them current. Use the maintained `nickfedor/watchtower` image; the original `containrrr/watchtower` was archived in December 2025.
+
+Run Watchtower with these settings, so it only touches runners and never interrupts a job:
+
+| Setting | Value | Why |
+| --- | --- | --- |
+| `WATCHTOWER_LABEL_ENABLE` | `true` | Only containers carrying the enable label are considered. Runners have it; nothing else on your server does. |
+| `WATCHTOWER_LIFECYCLE_HOOKS` | `true` | Runs the job check inside GitHub runners before updating them. |
+| `WATCHTOWER_TIMEOUT` | `30m` | How long a container may take to stop. GitLab runners finish the running job first. |
+| `WATCHTOWER_CLEANUP` | `true` | Removes old images. |
+| `WATCHTOWER_SCHEDULE` | `0 0 4 * * *` | Check once a day at 04:00. |
+
+Mount `/var/run/docker.sock` into Watchtower as usual. What the labels do:
+
+- Both kinds get `com.centurylinklabs.watchtower.enable=true`.
+- GitHub runners get a pre-update hook that looks for a running `Runner.Worker` process and exits with code 75 when one exists, which makes Watchtower skip that runner until the next check.
+- GitLab runners get `com.centurylinklabs.watchtower.stop-signal=SIGQUIT`. The GitLab runner treats that signal as "finish the current job, then exit".
+
+Watchtower recreates a container from its own configuration, so labels, environment, mounts, and the data folder all survive, and the runner keeps its registration. Runners created before this feature do not have the labels; delete and recreate them once. Set `WATCHTOWER_LABELS=false` on the app if you do not want the labels at all.
+
 ### Delete a runner
 
 Click **Delete** on the runner and confirm. This removes the container and its data folder on the server. A GitLab runner is also removed from GitLab using the token stored in its config. A GitHub runner keeps showing as **Offline** in the repository until you remove it under **Settings → Actions → Runners**, because the app has no GitHub credentials.
@@ -108,6 +130,7 @@ The app runs as root inside its container because the runner image writes root-o
 | `UNRAID_HOSTNAME` | `Tower` | Passed to runners as `HOST_HOSTNAME`. |
 | `TZ` | `UTC` | Timezone passed to runners. |
 | `LISTEN_ADDR` | `:8080` | Listen address. |
+| `WATCHTOWER_LABELS` | `true` | Label runner containers for Watchtower. See [Keeping runner images up to date](#keeping-runner-images-up-to-date). |
 | `SECURE_COOKIES` | `false` | Set to `true` behind an HTTPS reverse proxy. |
 | `SESSION_TTL` | `720h` | How long a sign-in lasts. |
 | `DOCKER_HOST` | `unix:///var/run/docker.sock` | Docker endpoint. |

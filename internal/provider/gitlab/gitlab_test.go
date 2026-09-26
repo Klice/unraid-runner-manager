@@ -194,3 +194,20 @@ func TestDeregister(t *testing.T) {
 		t.Fatal("server errors must surface")
 	}
 }
+
+func TestSpecWatchtowerLabels(t *testing.T) {
+	srv := gitlabtest.New(t)
+	_, r := newProvider(t, srv)
+	with := New(Options{Image: "img", JobImage: "job", Icon: "icon", Prefix: "Gitlab-Runner", Timezone: "UTC", Watchtower: true, HTTP: srv.Client()})
+	spec := with.Spec(r, "tok")
+	if spec.Labels[provider.WatchtowerEnableLabel] != "true" || spec.Labels[provider.WatchtowerStopSignalLabel] != "SIGQUIT" {
+		t.Fatalf("watchtower labels wrong: %v", spec.Labels)
+	}
+	if _, ok := spec.Labels[provider.WatchtowerPreUpdateLabel]; ok {
+		t.Fatal("gitlab runners have no pre-update probe")
+	}
+	without := New(Options{Image: "img", JobImage: "job", Icon: "icon", Prefix: "Gitlab-Runner", Timezone: "UTC", HTTP: srv.Client()})
+	if labels := without.Spec(r, "tok").Labels; len(labels) != 1 || labels["net.unraid.docker.icon"] != "icon" {
+		t.Fatalf("expected only the icon label, got %v", labels)
+	}
+}

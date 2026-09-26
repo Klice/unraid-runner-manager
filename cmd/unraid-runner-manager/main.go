@@ -81,19 +81,21 @@ func run(logger *slog.Logger) error {
 
 	providers := provider.Registry{
 		provider.GitHub: github.New(github.Options{
-			Image:    cfg.RunnerImage,
-			Icon:     cfg.RunnerIcon,
-			Prefix:   cfg.ContainerPrefix,
-			Hostname: cfg.UnraidHostname,
-			Timezone: cfg.Timezone,
+			Image:      cfg.RunnerImage,
+			Icon:       cfg.RunnerIcon,
+			Prefix:     cfg.ContainerPrefix,
+			Hostname:   cfg.UnraidHostname,
+			Timezone:   cfg.Timezone,
+			Watchtower: cfg.WatchtowerLabels,
 		}),
 		provider.GitLab: gitlab.New(gitlab.Options{
-			Image:    cfg.GitLabRunnerImage,
-			JobImage: cfg.GitLabJobImage,
-			Icon:     cfg.GitLabRunnerIcon,
-			Prefix:   cfg.GitLabPrefix,
-			Timezone: cfg.Timezone,
-			Logger:   logger,
+			Image:      cfg.GitLabRunnerImage,
+			JobImage:   cfg.GitLabJobImage,
+			Icon:       cfg.GitLabRunnerIcon,
+			Prefix:     cfg.GitLabPrefix,
+			Timezone:   cfg.Timezone,
+			Watchtower: cfg.WatchtowerLabels,
+			Logger:     logger,
 		}),
 	}
 	runners := runner.New(runner.Options{
