@@ -1,9 +1,14 @@
 (function () {
+  var activeLogSource = null;
+
   function startLogs() {
     var pre = document.getElementById("log");
-    if (!pre || !window.EventSource) return;
+    if (!pre || !window.EventSource || pre.dataset.started === "1") return;
+    pre.dataset.started = "1";
+    if (activeLogSource) activeLogSource.close();
     var follow = document.getElementById("log-follow");
     var source = new EventSource(pre.dataset.source);
+    activeLogSource = source;
     var first = true;
     var maxLines = 5000;
     source.onmessage = function (ev) {
@@ -69,4 +74,5 @@
     wireConfirms();
     wireProviderChoice();
   });
+  document.addEventListener("htmx:afterSettle", startLogs);
 })();
