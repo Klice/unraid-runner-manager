@@ -26,6 +26,7 @@ type Config struct {
 	AdminUsername      string
 	AdminPassword      string
 	SecureCookies      bool
+	WatchtowerLabels   bool
 	SessionTTL         time.Duration
 	Version            string
 }
@@ -74,6 +75,9 @@ func FromEnv(lookup func(string) (string, bool)) (Config, error) {
 	var err error
 	if cfg.SecureCookies, err = parseBool(get("SECURE_COOKIES", "false")); err != nil {
 		return Config{}, fmt.Errorf("SECURE_COOKIES: %w", err)
+	}
+	if cfg.WatchtowerLabels, err = parseBool(get("WATCHTOWER_LABELS", "true")); err != nil {
+		return Config{}, fmt.Errorf("WATCHTOWER_LABELS: %w", err)
 	}
 	if cfg.SessionTTL, err = time.ParseDuration(get("SESSION_TTL", defaultSessionTTL.String())); err != nil {
 		return Config{}, fmt.Errorf("SESSION_TTL: %w", err)

@@ -23,6 +23,22 @@ func TestDefaults(t *testing.T) {
 	if cfg.SessionTTL != 30*24*time.Hour || cfg.SecureCookies {
 		t.Fatalf("unexpected session defaults: %+v", cfg)
 	}
+	if !cfg.WatchtowerLabels {
+		t.Fatal("watchtower labels should be on by default")
+	}
+}
+
+func TestWatchtowerLabelsCanBeDisabled(t *testing.T) {
+	cfg, err := FromEnv(envFrom(map[string]string{"WATCHTOWER_LABELS": "false"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.WatchtowerLabels {
+		t.Fatal("expected watchtower labels off")
+	}
+	if _, err := FromEnv(envFrom(map[string]string{"WATCHTOWER_LABELS": "sometimes"})); err == nil {
+		t.Fatal("invalid value should be rejected")
+	}
 }
 
 func TestOverridesAndTrimming(t *testing.T) {

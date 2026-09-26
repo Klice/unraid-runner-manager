@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -22,14 +23,15 @@ const (
 )
 
 type Options struct {
-	Image    string
-	JobImage string
-	Icon     string
-	Prefix   string
-	Timezone string
-	HTTP     *http.Client
-	Logger   *slog.Logger
-	Now      func() time.Time
+	Image      string
+	JobImage   string
+	Icon       string
+	Prefix     string
+	Timezone   string
+	Watchtower bool
+	HTTP       *http.Client
+	Logger     *slog.Logger
+	Now        func() time.Time
 }
 
 type Provider struct {
@@ -109,13 +111,21 @@ func (p *Provider) Spec(r provider.Runner, _ string) dockerapi.CreateSpec {
 		Name:   r.ContainerName,
 		Image:  p.opts.Image,
 		Env:    []string{"TZ=" + p.opts.Timezone},
-		Labels: map[string]string{labelIcon: p.opts.Icon},
+		Labels: p.labels(),
 		Binds: []dockerapi.Bind{
 			{Source: r.HostDataDir + "/" + configDirName, Target: "/etc/gitlab-runner"},
 			{Source: "/var/run/docker.sock", Target: "/var/run/docker.sock"},
 		},
 		RestartAlways: true,
 	}
+}
+
+func (p *Provider) labels() map[string]string {
+	labels := map[string]string{labelIcon: p.opts.Icon}
+	if p.opts.Watchtower {
+		maps.Copy(labels, provider.WatchtowerGracefulStop("SIGQUIT"))
+	}
+	return labels
 }
 
 func (p *Provider) Deregister(ctx context.Context, r provider.Runner) error {

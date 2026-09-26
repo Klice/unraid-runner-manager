@@ -2,20 +2,25 @@ package github
 
 import (
 	"context"
+	"maps"
 	"strings"
 
 	"github.com/Klice/unraid-runner-manager/internal/dockerapi"
 	"github.com/Klice/unraid-runner-manager/internal/provider"
 )
 
-const labelIcon = "net.unraid.docker.icon"
+const (
+	labelIcon = "net.unraid.docker.icon"
+	busyProbe = "grep -qa 'Runner[.]Worker' /proc/[0-9]*/cmdline"
+)
 
 type Options struct {
-	Image    string
-	Icon     string
-	Prefix   string
-	Hostname string
-	Timezone string
+	Image      string
+	Icon       string
+	Prefix     string
+	Hostname   string
+	Timezone   string
+	Watchtower bool
 }
 
 type Provider struct {
@@ -63,7 +68,7 @@ func (p *Provider) Spec(r provider.Runner, token string) dockerapi.CreateSpec {
 			"DISABLE_AUTOMATIC_DEREGISTRATION=true",
 			"CONFIGURED_ACTIONS_RUNNER_FILES_DIR=/runner/persistent_files",
 		},
-		Labels: map[string]string{labelIcon: p.opts.Icon},
+		Labels: p.labels(),
 		Binds: []dockerapi.Bind{
 			{Source: "/tmp/runner", Target: "/tmp/runner"},
 			{Source: r.HostDataDir, Target: "/runner/persistent_files"},
@@ -73,6 +78,14 @@ func (p *Provider) Spec(r provider.Runner, token string) dockerapi.CreateSpec {
 		PidsLimit:     2048,
 		RestartAlways: true,
 	}
+}
+
+func (p *Provider) labels() map[string]string {
+	labels := map[string]string{labelIcon: p.opts.Icon}
+	if p.opts.Watchtower {
+		maps.Copy(labels, provider.WatchtowerSkipWhileBusy(busyProbe))
+	}
+	return labels
 }
 
 func (p *Provider) Deregister(context.Context, provider.Runner) error {
