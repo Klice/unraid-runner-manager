@@ -10,7 +10,6 @@ type Container struct {
 	ID      string
 	Name    string
 	Image   string
-	ImageID string
 	State   string
 	Status  string
 	Created time.Time
@@ -47,11 +46,7 @@ type Client interface {
 	Ping(ctx context.Context) error
 	ListByLabel(ctx context.Context, label string) ([]Container, error)
 	PullImage(ctx context.Context, image string) error
-	ImageID(ctx context.Context, image string) (string, error)
 	Create(ctx context.Context, spec CreateSpec) (string, error)
-	Inspect(ctx context.Context, id string) (CreateSpec, error)
-	Rename(ctx context.Context, id, name string) error
-	Exec(ctx context.Context, id string, cmd []string) (int, error)
 	Start(ctx context.Context, id string) error
 	Stop(ctx context.Context, id string) error
 	Restart(ctx context.Context, id string) error
