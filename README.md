@@ -51,6 +51,10 @@ jobs:
 
 Runners are started with `restart=always`, so they survive an Unraid reboot without any manual action.
 
+### Updates
+
+Nothing to do. The GitHub runner agent inside the container updates itself. The container image is updated by the app: once a day it pulls the runner image, and every runner that is on an older image is recreated on the new one with the same settings and the same data folder, so it keeps its registration. A runner that is in the middle of a job is left alone and retried every ten minutes. The runner list shows when the last check ran and what it did. The interval is set with `RUNNER_UPDATE_INTERVAL`.
+
 ### Day to day
 
 - The **Runners** page refreshes on its own and mirrors the container state: running, stopped, paused, or creating. Use the buttons on each row to stop, start, or resume a runner.
@@ -80,6 +84,7 @@ The app runs as root inside its container because the runner image writes root-o
 | `RUNNER_DATA_HOST_ROOT` | detected | Host path of the runner data root. Detected from the container's own mounts when empty. |
 | `DATA_DIR` | `/config` | Folder for the SQLite database. |
 | `RUNNER_IMAGE` | `myoung34/github-runner:latest` | Image used for new runners. |
+| `RUNNER_UPDATE_INTERVAL` | `24h` | How often to pull the image and recreate outdated runners. `0` disables it. |
 | `CONTAINER_PREFIX` | `Github-Runner` | Prefix for runner container names. |
 | `UNRAID_HOSTNAME` | `Tower` | Passed to runners as `HOST_HOSTNAME`. |
 | `TZ` | `UTC` | Timezone passed to runners. |

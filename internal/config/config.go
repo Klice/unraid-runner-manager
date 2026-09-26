@@ -23,6 +23,7 @@ type Config struct {
 	AdminPassword      string
 	SecureCookies      bool
 	SessionTTL         time.Duration
+	UpdateInterval     time.Duration
 	Version            string
 }
 
@@ -37,6 +38,7 @@ const (
 	defaultTimezone      = "UTC"
 	defaultAdmin         = "admin"
 	defaultSessionTTL    = 30 * 24 * time.Hour
+	defaultUpdateEvery   = 24 * time.Hour
 )
 
 func FromEnv(lookup func(string) (string, bool)) (Config, error) {
@@ -68,6 +70,12 @@ func FromEnv(lookup func(string) (string, bool)) (Config, error) {
 	}
 	if cfg.SessionTTL <= 0 {
 		return Config{}, errors.New("SESSION_TTL must be positive")
+	}
+	if cfg.UpdateInterval, err = time.ParseDuration(get("RUNNER_UPDATE_INTERVAL", defaultUpdateEvery.String())); err != nil {
+		return Config{}, fmt.Errorf("RUNNER_UPDATE_INTERVAL: %w", err)
+	}
+	if cfg.UpdateInterval < 0 {
+		return Config{}, errors.New("RUNNER_UPDATE_INTERVAL must be zero or positive")
 	}
 	if cfg.RunnerDataDir == "" {
 		return Config{}, errors.New("RUNNER_DATA_DIR must not be empty")

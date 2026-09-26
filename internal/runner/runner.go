@@ -57,7 +57,9 @@ type Runner struct {
 	Error         string
 }
 
-func (r Runner) Pending() bool { return r.State == StateCreating || r.State == StateFailed }
+func (r Runner) Pending() bool {
+	return r.State == StateCreating || r.State == StateFailed || r.State == StateUpdating
+}
 func (r Runner) Running() bool { return r.State == StateRunning }
 func (r Runner) Paused() bool  { return r.State == StatePaused }
 
@@ -76,10 +78,13 @@ type Options struct {
 }
 
 type Service struct {
-	opts    Options
-	mu      sync.Mutex
-	pending map[string]*Runner
-	wg      sync.WaitGroup
+	opts       Options
+	mu         sync.Mutex
+	pending    map[string]*Runner
+	updating   map[string]bool
+	lastUpdate UpdateReport
+	hasUpdate  bool
+	wg         sync.WaitGroup
 }
 
 func New(opts Options) *Service {
@@ -92,7 +97,7 @@ func New(opts Options) *Service {
 	if opts.Names == nil {
 		opts.Names = names.New(nil)
 	}
-	return &Service{opts: opts, pending: map[string]*Runner{}}
+	return &Service{opts: opts, pending: map[string]*Runner{}, updating: map[string]bool{}}
 }
 
 func (s *Service) List(ctx context.Context) ([]Runner, error) {
@@ -102,11 +107,21 @@ func (s *Service) List(ctx context.Context) ([]Runner, error) {
 	}
 	out := make([]Runner, 0, len(containers))
 	for _, c := range containers {
-		out = append(out, fromContainer(c))
+		out = append(out, s.overlayUpdating(fromContainer(c)))
 	}
 	out = append(out, s.pendingRunners(out)...)
 	slices.SortFunc(out, func(a, b Runner) int { return b.Created.Compare(a.Created) })
 	return out, nil
+}
+
+func (s *Service) overlayUpdating(r Runner) Runner {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.updating[r.Name] {
+		r.State = StateUpdating
+		r.Status = "Recreating container with the latest image"
+	}
+	return r
 }
 
 func (s *Service) pendingRunners(existing []Runner) []Runner {
@@ -292,7 +307,7 @@ func (s *Service) Delete(ctx context.Context, name string) error {
 	if err != nil {
 		return err
 	}
-	if r.State == StateCreating {
+	if r.State == StateCreating || r.State == StateUpdating {
 		return ErrInProgress
 	}
 	if r.ContainerID != "" {
@@ -339,7 +354,7 @@ func (s *Service) containerAction(ctx context.Context, name string, action func(
 	if err != nil {
 		return err
 	}
-	if r.ContainerID == "" {
+	if r.ContainerID == "" || r.State == StateUpdating {
 		return ErrInProgress
 	}
 	return action(ctx, r.ContainerID)

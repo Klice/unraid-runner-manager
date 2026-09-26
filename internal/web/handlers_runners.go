@@ -25,6 +25,25 @@ type runnersData struct {
 	Total    int
 	Running  int
 	Hostname string
+	Updates  updateStatus
+}
+
+type updateStatus struct {
+	Enabled   bool
+	Interval  time.Duration
+	Checked   bool
+	CheckedAt time.Time
+	Summary   string
+}
+
+func (s *Server) updateStatus() updateStatus {
+	st := updateStatus{Enabled: s.cfg.UpdateInterval > 0, Interval: s.cfg.UpdateInterval}
+	if report, ok := s.runners.LastUpdate(); ok {
+		st.Checked = true
+		st.CheckedAt = report.CheckedAt
+		st.Summary = report.Summary()
+	}
+	return st
 }
 
 func (s *Server) visibleRunners(r *http.Request, scope, query string) ([]runner.Runner, error) {
@@ -69,7 +88,7 @@ func (s *Server) runnersTableData(r *http.Request) (runnersData, error) {
 	if err != nil {
 		return runnersData{}, err
 	}
-	data := runnersData{Runners: list, Scope: scope, Query: query, Total: len(list), Hostname: s.cfg.UnraidHostname}
+	data := runnersData{Runners: list, Scope: scope, Query: query, Total: len(list), Hostname: s.cfg.UnraidHostname, Updates: s.updateStatus()}
 	for _, rn := range list {
 		if rn.Running() {
 			data.Running++

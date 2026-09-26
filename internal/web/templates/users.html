@@ -12,7 +12,7 @@
           <td><span class="mono">{{.Username}}</span>{{if .IsSelf}} <span class="muted">(you)</span>{{end}}{{if .Disabled}} <span class="muted">disabled</span>{{end}}{{if .MustChangePassword}} <span class="muted">temporary password</span>{{end}}</td>
           <td><span class="role">{{.Role}}</span></td>
           <td class="tnum">{{.Runners}}</td>
-          <td class="tnum muted">{{datetime .LastLoginAt}}</td>
+          <td class="tnum muted">{{optdatetime .LastLoginAt}}</td>
           <td><div class="actions">
             {{if .IsSelf}}
               <a class="btn small" href="/account/password">Change password</a>
