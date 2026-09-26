@@ -12,8 +12,9 @@ import (
 	"time"
 
 	"github.com/Klice/unraid-runner-manager/internal/dockerapi"
-	"github.com/Klice/unraid-runner-manager/internal/github"
 	"github.com/Klice/unraid-runner-manager/internal/names"
+	"github.com/Klice/unraid-runner-manager/internal/provider"
+	"github.com/Klice/unraid-runner-manager/internal/provider/github"
 	"github.com/Klice/unraid-runner-manager/internal/runner"
 	"github.com/Klice/unraid-runner-manager/internal/store"
 )
@@ -96,26 +97,38 @@ func (s *Server) runnersTable(w http.ResponseWriter, r *http.Request) {
 	s.render(w, r, "runners", "runners_table", data)
 }
 
+type providerInfo struct {
+	Prefix   string
+	Image    string
+	JobImage string
+}
+
 type newRunnerData struct {
-	Repo            string
-	Labels          string
-	Error           string
-	ContainerPrefix string
-	HostRoot        string
-	Image           string
-	Owner           string
+	Provider provider.Kind
+	Repo     string
+	Labels   string
+	Error    string
+	HostRoot string
+	Owner    string
+	GitHub   providerInfo
+	GitLab   providerInfo
 }
 
 func (s *Server) newRunnerForm(w http.ResponseWriter, r *http.Request) {
-	s.render(w, r, "runner_new", "", s.newRunnerDefaults(r))
+	data := s.newRunnerDefaults(r)
+	if kind, err := provider.ParseKind(r.URL.Query().Get("provider")); err == nil {
+		data.Provider = kind
+	}
+	s.render(w, r, "runner_new", "", data)
 }
 
 func (s *Server) newRunnerDefaults(r *http.Request) newRunnerData {
 	return newRunnerData{
-		ContainerPrefix: s.cfg.ContainerPrefix,
-		HostRoot:        s.cfg.RunnerDataHostRoot,
-		Image:           s.cfg.RunnerImage,
-		Owner:           currentUser(r).Username,
+		Provider: provider.GitHub,
+		HostRoot: s.cfg.RunnerDataHostRoot,
+		Owner:    currentUser(r).Username,
+		GitHub:   providerInfo{Prefix: s.cfg.ContainerPrefix, Image: s.cfg.RunnerImage},
+		GitLab:   providerInfo{Prefix: s.cfg.GitLabPrefix, Image: s.cfg.GitLabRunnerImage, JobImage: s.cfg.GitLabJobImage},
 	}
 }
 
@@ -128,32 +141,36 @@ func (s *Server) createRunner(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusUnprocessableEntity)
 		s.render(w, r, "runner_new", "", data)
 	}
-	repo, err := github.ParseRepo(data.Repo)
+	kind, err := provider.ParseKind(r.FormValue("provider"))
 	if err != nil {
-		respond(err.Error())
+		respond("Pick GitHub or GitLab.")
 		return
 	}
+	data.Provider = kind
 	token := strings.TrimSpace(r.FormValue("token"))
 	if token == "" {
 		respond("Runner token is required.")
 		return
 	}
-	labels, err := github.ParseLabels(data.Labels)
-	if err != nil {
-		respond(err.Error())
-		return
+	var labels []string
+	if kind == provider.GitHub {
+		if labels, err = github.ParseLabels(data.Labels); err != nil {
+			respond(err.Error())
+			return
+		}
 	}
 	created, err := s.runners.Create(r.Context(), runner.CreateRequest{
-		Owner:  currentUser(r).Username,
-		Repo:   repo,
-		Token:  token,
-		Labels: labels,
+		Owner:    currentUser(r).Username,
+		Provider: kind,
+		Target:   data.Repo,
+		Token:    token,
+		Labels:   labels,
 	})
 	if err != nil {
 		respond(err.Error())
 		return
 	}
-	s.log.Info("runner requested", "runner", created.Name, "owner", created.Owner, "repo", created.Repo)
+	s.log.Info("runner requested", "runner", created.Name, "owner", created.Owner, "provider", created.Provider, "repo", created.Repo)
 	http.Redirect(w, r, "/runners/"+created.Name+"?created=1", http.StatusSeeOther)
 }
 
@@ -336,14 +353,18 @@ func (s *Server) deleteRunner(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
-	if err := s.runners.Delete(r.Context(), rn.Name); err != nil {
-		if errors.Is(err, runner.ErrInProgress) {
-			http.Error(w, "runner is still being created", http.StatusConflict)
-			return
-		}
+	err = s.runners.Delete(r.Context(), rn.Name)
+	switch {
+	case err == nil:
+		s.setFlash(w, "ok", "Deleted "+rn.Name+" and its data folder.")
+	case errors.Is(err, runner.ErrDeregister):
+		s.setFlash(w, "error", "Deleted "+rn.Name+" and its data folder, but it could not be removed from "+rn.Provider.Title()+": "+err.Error()+". Remove it there by hand.")
+	case errors.Is(err, runner.ErrInProgress):
+		http.Error(w, "runner is still being created", http.StatusConflict)
+		return
+	default:
 		s.fail(w, r, err)
 		return
 	}
-	s.setFlash(w, "ok", "Deleted "+rn.Name+" and its data folder.")
 	s.redirect(w, r, "/runners")
 }

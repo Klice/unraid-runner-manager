@@ -13,7 +13,7 @@
         <a class="name mono" href="/runners/{{.Name}}">{{.Name}}</a>
         {{if .Labels}}<div class="owner">labels: {{join .Labels ", "}}</div>{{end}}
       </td>
-      <td class="repo"><a href="{{.RepoURL}}" target="_blank" rel="noopener">{{.Repo}}</a></td>
+      <td class="repo"><span class="provider {{.Provider}}">{{.Provider.Title}}</span> <a href="{{.RepoURL}}" target="_blank" rel="noopener">{{.Repo}}</a></td>
       {{if $admin}}<td>{{.Owner}}</td>{{end}}
       <td>
         <span class="pill {{pill .State}}">{{.State}}</span>

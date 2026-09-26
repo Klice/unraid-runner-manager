@@ -17,6 +17,10 @@ type Config struct {
 	RunnerImage        string
 	RunnerIcon         string
 	ContainerPrefix    string
+	GitLabRunnerImage  string
+	GitLabJobImage     string
+	GitLabRunnerIcon   string
+	GitLabPrefix       string
 	UnraidHostname     string
 	Timezone           string
 	AdminUsername      string
@@ -33,6 +37,10 @@ const (
 	defaultRunnerImage   = "myoung34/github-runner:latest"
 	defaultRunnerIcon    = "https://raw.githubusercontent.com/nwithan8/unraid_templates/master/images/github-runner-icon.png"
 	defaultPrefix        = "Github-Runner"
+	defaultGitLabImage   = "gitlab/gitlab-runner:latest"
+	defaultGitLabJob     = "alpine:latest"
+	defaultGitLabIcon    = "https://about.gitlab.com/images/press/logo/png/gitlab-icon-rgb.png"
+	defaultGitLabPrefix  = "Gitlab-Runner"
 	defaultHostname      = "Tower"
 	defaultTimezone      = "UTC"
 	defaultAdmin         = "admin"
@@ -54,6 +62,10 @@ func FromEnv(lookup func(string) (string, bool)) (Config, error) {
 		RunnerImage:        get("RUNNER_IMAGE", defaultRunnerImage),
 		RunnerIcon:         get("RUNNER_ICON", defaultRunnerIcon),
 		ContainerPrefix:    get("CONTAINER_PREFIX", defaultPrefix),
+		GitLabRunnerImage:  get("GITLAB_RUNNER_IMAGE", defaultGitLabImage),
+		GitLabJobImage:     get("GITLAB_JOB_IMAGE", defaultGitLabJob),
+		GitLabRunnerIcon:   get("GITLAB_RUNNER_ICON", defaultGitLabIcon),
+		GitLabPrefix:       get("GITLAB_CONTAINER_PREFIX", defaultGitLabPrefix),
 		UnraidHostname:     get("UNRAID_HOSTNAME", defaultHostname),
 		Timezone:           get("TZ", defaultTimezone),
 		AdminUsername:      get("ADMIN_USERNAME", defaultAdmin),

@@ -13,34 +13,56 @@ import (
 
 	"github.com/Klice/unraid-runner-manager/internal/dockerapi"
 	"github.com/Klice/unraid-runner-manager/internal/dockerfake"
-	"github.com/Klice/unraid-runner-manager/internal/github"
 	"github.com/Klice/unraid-runner-manager/internal/names"
+	"github.com/Klice/unraid-runner-manager/internal/provider"
+	"github.com/Klice/unraid-runner-manager/internal/provider/github"
+	"github.com/Klice/unraid-runner-manager/internal/provider/gitlab"
+	"github.com/Klice/unraid-runner-manager/internal/provider/gitlab/gitlabtest"
 )
 
 func newService(t *testing.T, fake *dockerfake.Fake) (*Service, string) {
+	svc, root, _ := newServiceWithGitLab(t, fake)
+	return svc, root
+}
+
+func newServiceWithGitLab(t *testing.T, fake *dockerfake.Fake) (*Service, string, *gitlabtest.Server) {
 	t.Helper()
 	root := t.TempDir()
+	srv := gitlabtest.New(t)
 	svc := New(Options{
-		Docker:          fake,
-		Names:           names.New(rand.NewPCG(1, 1)),
-		Image:           "myoung34/github-runner:latest",
-		Icon:            "https://example.invalid/icon.png",
-		ContainerPrefix: "Github-Runner",
-		HostRoot:        "/mnt/user/appdata/github-runners",
-		LocalRoot:       root,
-		Hostname:        "Tower",
-		Timezone:        "America/New_York",
+		Docker: fake,
+		Names:  names.New(rand.NewPCG(1, 1)),
+		Providers: provider.Registry{
+			provider.GitHub: github.New(github.Options{
+				Image:    "myoung34/github-runner:latest",
+				Icon:     "https://example.invalid/icon.png",
+				Prefix:   "Github-Runner",
+				Hostname: "Tower",
+				Timezone: "America/New_York",
+			}),
+			provider.GitLab: gitlab.New(gitlab.Options{
+				Image:    "gitlab/gitlab-runner:latest",
+				JobImage: "alpine:latest",
+				Icon:     "https://example.invalid/gitlab.png",
+				Prefix:   "Gitlab-Runner",
+				Timezone: "America/New_York",
+				HTTP:     srv.Client(),
+			}),
+		},
+		HostRoot:  "/mnt/user/appdata/github-runners",
+		LocalRoot: root,
 	})
-	return svc, root
+	return svc, root, srv
 }
 
 func create(t *testing.T, svc *Service, owner, repo string, labels ...string) Runner {
 	t.Helper()
 	r, err := svc.Create(t.Context(), CreateRequest{
-		Owner:  owner,
-		Repo:   github.Repo{Owner: strings.Split(repo, "/")[0], Name: strings.Split(repo, "/")[1]},
-		Token:  "TOKEN123",
-		Labels: labels,
+		Owner:    owner,
+		Provider: provider.GitHub,
+		Target:   repo,
+		Token:    "TOKEN123",
+		Labels:   labels,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -136,7 +158,7 @@ func TestListReadsBackFromLabels(t *testing.T) {
 
 func TestCreateRejectsEmptyToken(t *testing.T) {
 	svc, _ := newService(t, dockerfake.New())
-	if _, err := svc.Create(t.Context(), CreateRequest{Owner: "max", Repo: github.Repo{Owner: "a", Name: "b"}, Token: "  "}); err == nil {
+	if _, err := svc.Create(t.Context(), CreateRequest{Owner: "max", Provider: provider.GitHub, Target: "a/b", Token: "  "}); err == nil {
 		t.Fatal("expected error")
 	}
 }
@@ -147,7 +169,7 @@ func TestCreateShowsPendingThenFailure(t *testing.T) {
 	fake.PullErr = errors.New("registry unreachable")
 	svc, root := newService(t, fake)
 
-	r, err := svc.Create(t.Context(), CreateRequest{Owner: "max", Repo: github.Repo{Owner: "Klice", Name: "x"}, Token: "T"})
+	r, err := svc.Create(t.Context(), CreateRequest{Owner: "max", Provider: provider.GitHub, Target: "Klice/x", Token: "T"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -283,5 +305,144 @@ func TestNamesAreUniqueAcrossOwners(t *testing.T) {
 			t.Fatalf("duplicate name %q", r.Name)
 		}
 		seen[r.Name] = true
+	}
+}
+
+func createGitLab(t *testing.T, svc *Service, srv *gitlabtest.Server, token string) Runner {
+	t.Helper()
+	r, err := svc.Create(t.Context(), CreateRequest{
+		Owner:    "ola",
+		Provider: provider.GitLab,
+		Target:   srv.ProjectURL("ola/toy-gallery"),
+		Token:    token,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	svc.Wait()
+	return r
+}
+
+func TestGitLabCreateRegistersAndKeepsTokenOutOfEnv(t *testing.T) {
+	fake := dockerfake.New()
+	svc, root, srv := newServiceWithGitLab(t, fake)
+	r := createGitLab(t, svc, srv, srv.ValidToken)
+
+	got, err := svc.Get(t.Context(), r.Name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Provider != provider.GitLab || !got.IsGitLab() || got.State != StateRunning {
+		t.Fatalf("unexpected runner %+v", got)
+	}
+	if got.ContainerName != "Gitlab-Runner-ola-"+r.Name || got.Repo != "127.0.0.1:"+strings.Split(srv.URL, ":")[2]+"/ola/toy-gallery" || got.RepoURL != srv.ProjectURL("ola/toy-gallery") {
+		t.Fatalf("unexpected naming %+v", got)
+	}
+	if got.Image != "gitlab/gitlab-runner:latest" {
+		t.Fatalf("unexpected image %s", got.Image)
+	}
+	if v := srv.VerifiedTokens(); len(v) != 1 || v[0] != srv.ValidToken {
+		t.Fatalf("token should be verified once, got %v", v)
+	}
+	rec, ok := fake.Get(got.ContainerName)
+	if !ok {
+		t.Fatal("container missing")
+	}
+	if strings.Contains(strings.Join(rec.Spec.Env, "\n"), srv.ValidToken) {
+		t.Fatal("token leaked into container environment")
+	}
+	if rec.Labels[LabelProvider] != "gitlab" || rec.Labels[LabelURL] != srv.ProjectURL("ola/toy-gallery") {
+		t.Fatalf("labels wrong: %v", rec.Labels)
+	}
+	cfg, err := gitlab.ReadConfig(filepath.Join(root, "ola", r.Name, "config", "config.toml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Runners[0].Token != srv.ValidToken || cfg.Runners[0].URL != srv.URL {
+		t.Fatalf("config.toml wrong: %+v", cfg.Runners[0])
+	}
+}
+
+func TestGitLabCreateFailsOnRejectedToken(t *testing.T) {
+	fake := dockerfake.New()
+	svc, root, srv := newServiceWithGitLab(t, fake)
+	r := createGitLab(t, svc, srv, "glrt-bad")
+	got, _ := svc.Get(t.Context(), r.Name)
+	if got.State != StateFailed || !strings.Contains(got.Error, "rejected") {
+		t.Fatalf("expected failure with rejection message, got %+v", got)
+	}
+	if fake.Count() != 0 {
+		t.Fatal("no container should be created when registration fails")
+	}
+	if _, err := os.Stat(filepath.Join(root, "ola", r.Name)); !os.IsNotExist(err) {
+		t.Fatal("data folder should be cleaned up")
+	}
+}
+
+func TestGitLabLabelsAreRejected(t *testing.T) {
+	svc, _, srv := newServiceWithGitLab(t, dockerfake.New())
+	_, err := svc.Create(t.Context(), CreateRequest{Owner: "ola", Provider: provider.GitLab, Target: srv.ProjectURL("a/b"), Token: "x", Labels: []string{"gpu"}})
+	if err == nil || !strings.Contains(err.Error(), "tags") {
+		t.Fatalf("expected labels to be rejected for gitlab, got %v", err)
+	}
+}
+
+func TestGitLabDeleteDeregisters(t *testing.T) {
+	fake := dockerfake.New()
+	svc, root, srv := newServiceWithGitLab(t, fake)
+	r := createGitLab(t, svc, srv, srv.ValidToken)
+	if err := svc.Delete(t.Context(), r.Name); err != nil {
+		t.Fatal(err)
+	}
+	if d := srv.DeletedTokens(); len(d) != 1 || d[0] != srv.ValidToken {
+		t.Fatalf("expected one delete call with the stored token, got %v (unexpected requests: %v)", d, srv.Unexpected)
+	}
+	if fake.Count() != 0 {
+		t.Fatal("container should be removed")
+	}
+	if _, err := os.Stat(filepath.Join(root, "ola", r.Name)); !os.IsNotExist(err) {
+		t.Fatal("data folder should be removed")
+	}
+}
+
+func TestGitLabDeleteContinuesWhenServerFails(t *testing.T) {
+	fake := dockerfake.New()
+	svc, root, srv := newServiceWithGitLab(t, fake)
+	r := createGitLab(t, svc, srv, srv.ValidToken)
+	srv.SetFailure(500)
+	err := svc.Delete(t.Context(), r.Name)
+	if !errors.Is(err, ErrDeregister) {
+		t.Fatalf("expected ErrDeregister, got %v", err)
+	}
+	if fake.Count() != 0 {
+		t.Fatal("container should still be removed")
+	}
+	if _, err := os.Stat(filepath.Join(root, "ola", r.Name)); !os.IsNotExist(err) {
+		t.Fatal("data folder should still be removed")
+	}
+}
+
+func TestLegacyContainersDefaultToGitHub(t *testing.T) {
+	fake := dockerfake.New()
+	svc, _ := newService(t, fake)
+	_, err := fake.Create(t.Context(), dockerapi.CreateSpec{
+		Name:  "Github-Runner-max-old-one",
+		Image: "myoung34/github-runner:latest",
+		Labels: map[string]string{
+			LabelManaged: "true",
+			LabelOwner:   "max",
+			LabelName:    "old-one",
+			LabelRepo:    "Klice/legacy",
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := svc.Get(t.Context(), "old-one")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Provider != provider.GitHub || got.RepoURL != "https://github.com/Klice/legacy" || got.Repo != "Klice/legacy" {
+		t.Fatalf("legacy container not mapped to github: %+v", got)
 	}
 }
