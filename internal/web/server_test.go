@@ -491,3 +491,33 @@ func TestDeleteGitLabRunnerWarnsWhenServerFails(t *testing.T) {
 		t.Fatal("container should be removed regardless")
 	}
 }
+
+func TestGitLabConcurrencyField(t *testing.T) {
+	e := newEnv(t)
+	c := e.login("ola", "ola-password-1")
+	page := body(t, e.get(c, "/runners/new?provider=gitlab", nil))
+	if !strings.Contains(page, `name="concurrency"`) || !strings.Contains(page, `value="1"`) {
+		t.Fatal("form should offer concurrent jobs defaulting to 1")
+	}
+	res := e.post(c, "/runners", url.Values{"provider": {"gitlab"}, "repo": {e.gitlab.ProjectURL("ola/toy-gallery")}, "token": {e.gitlab.ValidToken}, "concurrency": {"lots"}}, nil)
+	if res.StatusCode != http.StatusUnprocessableEntity || !strings.Contains(body(t, res), "must be a number") {
+		t.Fatal("non-numeric concurrency should be rejected")
+	}
+	res = e.post(c, "/runners", url.Values{"provider": {"gitlab"}, "repo": {e.gitlab.ProjectURL("ola/toy-gallery")}, "token": {e.gitlab.ValidToken}, "concurrency": {"20"}}, nil)
+	if res.StatusCode != http.StatusUnprocessableEntity || !strings.Contains(body(t, res), "between 1 and 8") {
+		t.Fatal("out-of-range concurrency should be rejected")
+	}
+	res = e.post(c, "/runners", url.Values{"provider": {"gitlab"}, "repo": {e.gitlab.ProjectURL("ola/toy-gallery")}, "token": {e.gitlab.ValidToken}, "concurrency": {"3"}}, nil)
+	if res.StatusCode != http.StatusSeeOther {
+		t.Fatalf("create: %d %s", res.StatusCode, body(t, res))
+	}
+	e.runners.Wait()
+	name := regexp.MustCompile(`^/runners/([a-z0-9-]+)\?created=1$`).FindStringSubmatch(res.Header.Get("Location"))[1]
+	detail := body(t, e.get(c, "/runners/"+name, nil))
+	if !strings.Contains(detail, "Concurrent jobs <b>3</b>") {
+		t.Fatal("detail page should show concurrency")
+	}
+	if !strings.Contains(body(t, e.get(c, "/runners", nil)), "3 jobs at once") {
+		t.Fatal("list should show concurrency above one")
+	}
+}

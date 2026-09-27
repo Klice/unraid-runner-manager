@@ -12,6 +12,7 @@
       <td>
         <a class="name mono" href="/runners/{{.Name}}">{{.Name}}</a>
         {{if .Labels}}<div class="owner">labels: {{join .Labels ", "}}</div>{{end}}
+        {{if and .IsGitLab (gt .Concurrency 1)}}<div class="owner">{{.Concurrency}} jobs at once</div>{{end}}
       </td>
       <td class="repo"><span class="provider {{.Provider}}">{{.Provider.Title}}</span> <a href="{{.RepoURL}}" target="_blank" rel="noopener">{{.Repo}}</a></td>
       {{if $admin}}<td>{{.Owner}}</td>{{end}}

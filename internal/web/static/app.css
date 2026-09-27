@@ -143,3 +143,4 @@ fieldset.choice legend{font-weight:500;margin-bottom:6px;padding:0}
 [data-only]{display:none}
 [data-provider="github"] [data-only="github"],[data-provider="gitlab"] [data-only="gitlab"]{display:revert}
 [data-provider="github"] .field[data-only="github"],[data-provider="gitlab"] .field[data-only="gitlab"]{display:flex}
+input.short{width:120px}

@@ -49,15 +49,19 @@ type Runner struct {
 	URL           string
 	Display       string
 	Labels        []string
+	Concurrency   int
 	HostDataDir   string
 	LocalDataDir  string
 }
+
+const MaxConcurrency = 8
 
 type Provider interface {
 	Kind() Kind
 	Image() string
 	ContainerPrefix() string
 	SupportsLabels() bool
+	SupportsConcurrency() bool
 	ParseTarget(input string) (Target, error)
 	Prepare(ctx context.Context, r Runner, token string) error
 	Spec(r Runner, token string) dockerapi.CreateSpec
